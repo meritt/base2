@@ -1,5 +1,5 @@
 /*
-  base2 - copyright 2007-2008, Dean Edwards
+  base2 - copyright 2007-2009, Dean Edwards
   http://code.google.com/p/base2/
   http://www.opensource.org/licenses/mit-license.php
 
@@ -7,17 +7,17 @@
     Doeke Zanstra
 */
 
-// timestamp: Sat, 06 Sep 2008 16:52:33
+// timestamp: Mon, 30 Mar 2009 18:26:18
 
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
 // =========================================================================
-// IO/package.js
+// io/package.js
 // =========================================================================
 
-var IO = new base2.Package(this, {
-  name:    "IO",
-  version: "0.9",
+var io = new base2.Package(this, {
+  name:    "io",
+  version: base2.version,
   imports: "Enumerable,Function2",
   exports: "NOT_SUPPORTED,READ,WRITE,FileSystem,Directory,LocalFileSystem,LocalDirectory,LocalFile"
 });
@@ -55,7 +55,7 @@ function _makeNativeAbsolutePath(path) {
   return LocalFileSystem.toNativePath(FileSystem.resolve(LocalFileSystem.getPath(), path));
 };
 
-var _fso;
+var _fso; // file system object
 function _activex_exec(method, path1, path2, flags) {
   if (!_fso) _fso = new ActiveXObject("Scripting.FileSystemObject");
   path1 = _makeNativeAbsolutePath(path1);
@@ -92,7 +92,7 @@ var XPCOM = Module.extend({
   
   "@(Components)": {
     createObject: function(classPath, interfaceId) {
-      if (classPath.charAt(0) != "@") {
+      if (classPath.indexOf("@") != 0) {
         classPath = "@mozilla.org/" + classPath;
       }
       try {
@@ -120,7 +120,7 @@ var XPCOM = Module.extend({
 });
 
 // =========================================================================
-// IO/FileSystem.js
+// io/FileSystem.js
 // =========================================================================
 
 // A base class to derive file systems from.
@@ -164,7 +164,7 @@ var FileSystem = Base.extend({
     path1 = String(path1 || "");
     path2 = String(path2 || "");
     // create a full path from two paths
-    if (path2.charAt(0) == "/") {
+    if (path2.indexOf("/") == 0) {
       var path = "";
     } else {
       path = path1.replace(_TRIM_PATH, "");
@@ -179,7 +179,7 @@ var FileSystem = Base.extend({
 });
 
 // =========================================================================
-// IO/Directory.js
+// io/Directory.js
 // =========================================================================
 
 // A collection of stubs that map out the directory structure.
@@ -214,7 +214,7 @@ var Directory = Collection.extend({
 });
 
 // =========================================================================
-// IO/LocalFileSystem.js
+// io/LocalFileSystem.js
 // =========================================================================
 
 var LocalFileSystem = FileSystem.extend({
@@ -408,7 +408,7 @@ var LocalFileSystem = FileSystem.extend({
 });
 
 // =========================================================================
-// IO/LocalDirectory.js
+// io/LocalDirectory.js
 // =========================================================================
 
 var LocalDirectory = Directory.extend({
@@ -478,7 +478,7 @@ var LocalDirectory = Directory.extend({
 });
 
 // =========================================================================
-// IO/LocalFile.js
+// io/LocalFile.js
 // =========================================================================
 
 // A class for reading/writing the local file system. Works for Moz/IE/Opera(java)

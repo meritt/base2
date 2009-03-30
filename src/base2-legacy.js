@@ -208,7 +208,6 @@ new function() {
       // the next line will throw an error for some versions of mozilla
       var pass = computedStyle.display;
     } catch (ex) {
-      // the previous line will throw an error for some versions of mozilla
     } finally {
       if (!pass) {
       	var UPPER_CASE = /[A-Z]/g;

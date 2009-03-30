@@ -1,5 +1,5 @@
 /*
-  base2 - copyright 2007-2008, Dean Edwards
+  base2 - copyright 2007-2009, Dean Edwards
   http://code.google.com/p/base2/
   http://www.opensource.org/licenses/mit-license.php
 
@@ -7,7 +7,7 @@
     Doeke Zanstra
 */
 
-// timestamp: Mon, 08 Sep 2008 15:48:07
+// timestamp: Mon, 30 Mar 2009 18:26:17
 
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
@@ -17,12 +17,12 @@ new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
 var DOM = new base2.Package(this, {
   name:    "DOM",
-  version: "1.0.1",
+  version: base2.version,
   imports: "Function2",
   exports:
     "Interface,Binding,Node,Document,Element,AbstractView,HTMLDocument,HTMLElement,"+
-    "Selector,Traversal,CSSParser,XPathParser,NodeSelector,DocumentSelector,ElementSelector,"+
-    "StaticNodeList,Event,EventTarget,DocumentEvent,ViewCSS,CSSStyleDeclaration,ClassList",
+    "Selector,Traversal,CSSParser,XPathParser,NodeSelector,StaticNodeList,"+
+    "Event,EventTarget,DocumentEvent,ViewCSS,CSSStyleDeclaration,ClassList,ElementView",
   
   bind: function(node) {
     // Apply a base2 DOM Binding to a native DOM node.
@@ -105,7 +105,7 @@ function _createDelegates(module, _interface) {
   var id = module.toString().slice(1, -1);
   for (var name in _interface) {
     var property = _interface[name];
-    if (name.charAt(0) == "@") {
+    if (name.indexOf("@") == 0) {
       _createDelegates(module, property);
     } else if (!module[name] && typeof property == "function" && property.call) {
       // delegate a static method to the bound object
@@ -115,6 +115,7 @@ function _createDelegates(module, _interface) {
       //    element.addEventListener(type, listener, capture)
       var args = "abcdefghij".slice(0, property.length).split("");
       var fn = new Function(args.join(","), format("%2.base=%2.%1.ancestor;var m=%2.base?'base':'%1';return %2[m](%3)", name, args[0], args.slice(1)));
+      //var fn = new Function(args.join(","), format("var t=%2.%1.ancestor;if(t)%2.base=t;var m=%2.base?'base':'%1';return %2[m](%3)", name, args[0], args.slice(1)));
       fn._delegate = name;
       module[name] = fn;
       module.namespace += "var " + name + "=base2.lang.bind('" + name + "'," + id + ");";
@@ -197,13 +198,6 @@ var Document = Node.extend(null, {
     if (document != window.document)
       new DOMContentLoadedEvent(document);
     return this.base(document);
-  },
-  
-  "@!(document.defaultView)": {
-    bind: function(document) {
-      document.defaultView = Traversal.getDefaultView(document);
-      return this.base(document);
-    }
   }
 });
 
@@ -230,7 +224,10 @@ var Element = Node.extend({
       var attribute = _getAttributeNode(element, name);
       if (attribute && (attribute.specified || name == "value")) {
         if (name == "href" || name == "src") {
-          element.base = element.getAttribute.ancestor;
+          //element.base = element.getAttribute.ancestor;
+          //return element[element.base ? "base" : "getAttribute"](name, 2);
+          var ancestor = element.getAttribute.ancestor;
+          if (ancestor) element.base = ancestor;
           return element[element.base ? "base" : "getAttribute"](name, 2);
         } else if (name == "style") {
          return element.style.cssText.toLowerCase();
@@ -239,8 +236,8 @@ var Element = Node.extend({
         }
       } else if (name == "type" && element.nodeName == "INPUT") {
         var outerHTML = element.outerHTML;
-  			with (outerHTML) outerHTML = slice(0, indexOf(">") + 1);
-  			return match(outerHTML, /type="?([^\s">]*)"?/i)[1] || null;
+        with (outerHTML) outerHTML = slice(0, indexOf(">") + 1);
+        return match(outerHTML, /type="?([^\s">]*)"?/i)[1] || "text";
       }
       return null;
     },
@@ -276,6 +273,12 @@ var Element = Node.extend({
       }
       return this.getAttribute(element, name) != null;
     }
+  },
+  
+  "@!(element.matchesSelector)": {
+    matchesSelector: function(element, selector) {
+      return new Selector(selector).test(element);
+    }
   }
 });
 
@@ -308,7 +311,17 @@ var Traversal = Module.extend({
   getDefaultView: function(node) {
     return this.getDocument(node).defaultView;
   },
-  
+
+  getFirstElementChild: function(node) {
+    node = node.firstChild;
+    return this.isElement(node) ? node : this.getNextElementSibling(node);
+  },
+
+  getLastElementChild: function(node) {
+    node = node.lastChild;
+    return this.isElement(node) ? node : this.getPreviousElementSibling(node);
+  },
+
   getNextElementSibling: function(node) {
     // return the next element to the supplied element
     //  nextSibling is not good enough as it might return a text or comment node
@@ -371,6 +384,8 @@ var Traversal = Module.extend({
     }
   }
 }, {
+  TEXT: TEXT,
+  
   contains: function(node, target) {
     node.nodeType; // throw an error if no node supplied
     while (target && (target = target.parentNode) && node != target) continue;
@@ -426,18 +441,20 @@ var _CAPTURING_PHASE = 1,
     
 var _MOUSE_BUTTON   = /^mouse(up|down)|click$/,
     _MOUSE_CLICK    = /click$/,
-    _BUBBLES        = "abort|error|select|change|resize|scroll|", // + _CANCELABLE
-    _CANCELABLE     = "(dbl)?click|mouse(down|up|over|move|out|wheel)|key(down|up)|submit|reset";
+    _BUBBLES        = "abort|error|select|change|resize|scroll|mousemove|reset|", // + _CANCELABLE
+    _CANCELABLE     = "(dbl)?click|mouse(down|up|over|out|wheel)|key(down|up|press)|submit";
 
     _BUBBLES = new RegExp("^(" + _BUBBLES + _CANCELABLE + ")$");
     _CANCELABLE = new RegExp("^(" + _CANCELABLE + ")$");
 
 if (_MSIE) {
-  var _W3C_EVENT_TYPE = {focusin: "focus", focusout: "blur"};
+  var _W3C_EVENT_TYPE = {focusin: "focus", focusout: "blur"},
       _CAPTURE_TYPE   = {focus: "focusin", blur: "focusout"};
 }
 
 var _CAN_DELEGATE = /^(blur|submit|reset|change|select)$|^(mouse|key|focus)|click$/;
+
+var _DELTA_SCALE = detect("Chrome2") ? 100 : 3;
 
 // =========================================================================
 // DOM/events/Event.js
@@ -482,6 +499,21 @@ var Event = Binding.extend({
   CAPTURING_PHASE: _CAPTURING_PHASE,
   AT_TARGET:       _AT_TARGET,
   BUBBLING_PHASE:  _BUBBLING_PHASE,
+
+  cloneEvent: function(event) {
+    if (event.isClone) return event;
+    var clone = copy(event);
+    clone.isClone = true;
+    clone.stopPropagation = function() {
+      event.stopPropagation();
+      this.cancelBubble = true;
+    };
+    clone.preventDefault = function() {
+      event.preventDefault();
+      this.returnValue = false;
+    };
+    return clone;
+  },
     
   "@!(document.createEvent)": {
     "@MSIE": {
@@ -496,21 +528,6 @@ var Event = Binding.extend({
         return this.base(event);
       }
     }
-  },
-
-  cloneEvent: function(event) {
-    var clone = copy(event);
-    clone.stopPropagation = function() {
-      event.stopPropagation();
-    };
-    clone.preventDefault = function() {
-      event.preventDefault();
-    };
-    return clone;
-  },
-
-  "@MSIE" : {
-    cloneEvent: copy
   }
 });
 
@@ -518,96 +535,100 @@ var Event = Binding.extend({
 // DOM/events/EventDispatcher.js
 // =========================================================================
 
-var EventDispatcher = Base.extend({
-  constructor: function(state) {
-    this.state = state;
-    this.events = state.events;
-  },
+// this enables a real execution context for each event.
+if (_MSIE) {
 
-  dispatch: function(nodes, event, phase) {
-    event.eventPhase = phase;
-    var map = this.events[event.type][phase];
-    if (map) {
+  var _fire = document.createElement("meta"),
+      _currentEvent,
+      _currentTarget,
+      _currentListener;
+
+  _fire.base2Events = 0;
+  _fire.attachEvent("onpropertychange", function(event) {
+    if (event.propertyName == "base2Events") {
+      if (typeof _currentListener == "function") {
+        _currentListener.call(_currentTarget, _currentEvent);
+      } else {
+        _currentListener.handleEvent(_currentEvent);
+      }
+    }
+  });
+  
+  document.getElementsByTagName("head")[0].appendChild(_fire);
+
+  var EventDispatcher = Base.extend({
+    constructor: function(state) {
+      this.state = state;
+      this.events = state.events;
+    },
+
+    dispatch: function(nodes, event, phase, map) {
+      _currentEvent = event;
+      event.eventPhase = phase;
       var i = nodes.length;
       while (i-- && !event.cancelBubble) {
-        var currentTarget = nodes[i];
-        var listeners = map[currentTarget.base2ID];
+        _currentTarget = nodes[i];
+        var listeners = map[_currentTarget.nodeType == 1 ? _currentTarget.uniqueID : _currentTarget.base2ID];
         if (listeners) {
           listeners = copy(listeners);
-          event.currentTarget = currentTarget;
-          event.eventPhase = currentTarget == event.target ? _AT_TARGET : phase;
+          event.currentTarget = _currentTarget;
+          event.eventPhase = _currentTarget == event.target ? _AT_TARGET : phase;
           for (var listenerID in listeners) {
-            var listener = listeners[listenerID];
-            if (typeof listener == "function") {
-              listener.call(currentTarget, event);
-            } else {
-              listener.handleEvent(event);
+            _currentListener = listeners[listenerID];
+            _fire.base2Events++; // believe it or not, this line of code dispatches the event in its own exection context. ;-)
+            if (event.returnValue === false) {
+              event.preventDefault();
             }
           }
         }
       }
-    }
-  },
+    },
 
-  handleEvent: function(event, fixed) {
-    Event.bind(event);
-    var type = event.type;
-    var w3cType = _W3C_EVENT_TYPE[type];
-    if (w3cType) {
-      event = copy(event);
-      type = event.type = w3cType;
-    }
-    if (this.events[type]) {
-      // Fix the mouse button (left=0, middle=1, right=2)
-      if (_MOUSE_BUTTON.test(type)) {
-        var button = _MOUSE_CLICK.test(type) ? this.state._button : event.button;
-        button = _TYPE_MAP[button] || 0;
-        if (event.button != button) {
-          event = copy(event);
-          event.button = button;
+    handleEvent: function(event, fixed) {
+      event = Event.cloneEvent(Event.bind(event));
+      var type = event.type,
+          w3cType = _W3C_EVENT_TYPE[type];
+      if (w3cType) {
+        type = event.type = w3cType;
+      }
+      var typeMap = this.events[type];
+      if (typeMap) {
+        // Fix the mouse button (left=0, middle=1, right=2)
+        if (_MOUSE_BUTTON.test(type)) {
+          var button = _MOUSE_CLICK.test(type) ? this.state._button : event.button;
+          event.button = _TYPE_MAP[button] || 0;
+        }
+        // Collect nodes in the event hierarchy
+        var target = event.target, nodes = [], i = 0;
+        while (target) {
+          nodes[i++] = target;
+          target = target.parentNode;
+        }
+        // Dispatch.
+        var map = typeMap[_CAPTURING_PHASE];
+        if (map) this.dispatch(nodes, event, _CAPTURING_PHASE, map);
+        map = typeMap[_BUBBLING_PHASE];
+        if (map && !event.cancelBubble) {
+          if (!event.bubbles) nodes.length = 1;
+          nodes.reverse();
+          this.dispatch(nodes, event, _BUBBLING_PHASE, map);
         }
       }
-      // Collect nodes in the event hierarchy
-      var currentTarget = event.target;
-      var nodes = [], i = 0;
-      while (currentTarget) {
-        nodes[i++] = currentTarget;
-        currentTarget = currentTarget.parentNode;
-      }
-      this.dispatch(nodes, event, _CAPTURING_PHASE);
-      if (!event.cancelBubble) {
-        if (!event.bubbles) nodes.length = 1;
-        nodes.reverse();
-        this.dispatch(nodes, event, _BUBBLING_PHASE);
-      }
-    }
-    return event.returnValue !== false;
-  },
-
-  "@MSIE.+win": {
-    handleEvent: function(event) {
-      if (event.type == "scroll") {
-        // horrible IE bug (setting style during scroll event causes crash)
-        // the scroll event can't be cancelled so it's not a problem to use a timer
-        setTimeout(bind(this.base, this, copy(event), true), 0);
-        return true;
-      } else {
-        return this.base(event);
-      }
+      return event.returnValue !== false;
     },
-    
+
     "@MSIE5": {
-      dispatch: function(nodes, event, phase) {
+      dispatch: function(nodes, event, phase, map) {
         // IE5.x documentElement does not have a parentNode so document is missing
         // from the nodes collection
         if (phase == _CAPTURING_PHASE && !Array2.item(nodes, -1).documentElement) {
           nodes.push(nodes[0].document);
         }
-        this.base(nodes, event, phase);
+        this.base(nodes, event, phase, map);
       }
     }
-  }
-});
+  });
+}
 
 // =========================================================================
 // DOM/events/EventTarget.js
@@ -623,7 +644,7 @@ var EventTarget = Interface.extend({
       var documentState = DocumentState.getInstance(target);
 
       // assign a unique id to both objects
-      var targetID = assignID(target);
+      var targetID = target.nodeType == 1 ? target.uniqueID : assignID(target);
       var listenerID = assignID(listener);
 
       // create a hash table of event types for the target object
@@ -652,7 +673,7 @@ var EventTarget = Interface.extend({
       if (typeMap) {
         var phaseMap = typeMap[useCapture ? _CAPTURING_PHASE : _BUBBLING_PHASE];
         if (phaseMap) {
-          var listeners = phaseMap[target.base2ID];
+          var listeners = phaseMap[target.nodeType == 1 ? target.uniqueID : target.base2ID];
           if (listeners) delete listeners[listener.base2ID];
         }
       }
@@ -696,8 +717,22 @@ var EventTarget = Interface.extend({
       }
     },
 
+    "@KHTML": {
+      addEventListener: function(target, type, listener, useCapture) {
+        if (type == "mousewheel") {
+          var originalListener = listener;
+          listener = _wrappedListeners[assignID(listener)] = function(event) {
+            event = Event.cloneEvent(event);
+            event.wheelDelta /= _DELTA_SCALE;
+            _handleEvent(target, originalListener, event);
+          };
+        }
+        this.base(target, type, listener, useCapture);
+      }
+    },
+
     // http://unixpapa.com/js/key.html
-    "@Linux|Mac|opera": {
+    "@Linux|Mac|Opera": {
       addEventListener: function(target, type, listener, useCapture) {
         // Some browsers do not fire repeated "keydown" events when a key
         // is held down. They do fire repeated "keypress" events though.
@@ -736,7 +771,7 @@ var EventTarget = Interface.extend({
   }
 });
 
-if (detect("Gecko")) {
+if (detect("Gecko")) { // this needs to be here
   EventTarget.removeEventListener._delegate = "removeEventListener";
   delete EventTarget.prototype.removeEventListener;
 }
@@ -800,7 +835,7 @@ var DOMContentLoadedEvent = Base.extend({
         }, 1);
       }
     };
-    // use the real event for browsers that support it (opera & firefox)
+    // use the real event for browsers that support it (Opera & Firefox)
     EventTarget.addEventListener(document, "DOMContentLoaded", function() {
       fired = true;
     }, false);
@@ -809,7 +844,7 @@ var DOMContentLoadedEvent = Base.extend({
 
   listen: Undefined,
 
-  "@!Gecko20([^0]|0[3-9])|Webkit[5-9]|Opera[19]|MSIE.+mac": {
+  "@!Gecko20([^0]|0[3-9])|Opera[19]|MSIE.+mac": {
     listen: function(document) {
       // if all else fails fall back on window.onload
       EventTarget.addEventListener(Traversal.getDefaultView(document), "load", this.fire, false);
@@ -855,19 +890,20 @@ Element.implement(EventTarget);
 
 // http://www.w3.org/TR/DOM-Level-2-Style/css.html#CSS-ViewCSS
 
-var _PIXEL     = /^\d+(px)?$/i,
-    _METRICS   = /(width|height|top|bottom|left|right|fontSize)$/,
-    _COLOR     = /^(color|backgroundColor)$/,
-    _RGB_BLACK = "rgb(0, 0, 0)",
-    _BLACK     = {black:1, "#000":1, "#000000":1};
+var _NUMBER  = /\d/,
+    _PIXEL   = /^\d+(px)?$/i,
+    _METRICS = /(width|height|top|bottom|left|right|fontSize)$/i,
+    _COLOR   = /color$/i,
+    _BLACK   = "rgb(0, 0, 0)",
+    _WHITE   = "rgb(255, 255, 255)";
 
 var ViewCSS = Interface.extend({
   "@!(document.defaultView.getComputedStyle)": {
     "@MSIE": {
       getComputedStyle: function(view, element, pseudoElement) {
         // pseudoElement parameter is not supported
-        var currentStyle = element.currentStyle;
-        var computedStyle = {};
+        var currentStyle = element.currentStyle,
+            computedStyle = {opacity: 1, clip: ViewCSS.getComputedPropertyValue(view, element, "clip")};
         for (var propertyName in currentStyle) {
           if (_METRICS.test(propertyName) || _COLOR.test(propertyName)) {
             computedStyle[propertyName] = this.getComputedPropertyValue(view, element, propertyName);
@@ -882,33 +918,79 @@ var ViewCSS = Interface.extend({
   
   getComputedStyle: function(view, element, pseudoElement) {
     return _CSSStyleDeclaration_ReadOnly.bind(this.base(view, element, pseudoElement));
-  }
+  }/*,
+
+  "@Opera": {
+    getComputedStyle: function(view, element, pseudoElement) {
+      var computedStyle = this.base(view, element, pseudoElement);
+      var fixedStyle = pcopy(computedStyle);
+      for (var i in computedStyle) {
+        if (_COLOR.test(i)) fixedStyle[i] = _toRGB(computedStyle[i]);
+        else if (typeof computedStyle[i] == "function") {
+          fixedStyle[i] = bind(i, computedStyle);
+        }
+      }
+      return fixedStyle;
+    }
+  }*/
 }, {
+  VENDOR: "",
+  "@Gecko": {VENDOR: "Moz"},
+  "@KHTML": {VENDOR: "Khtml"},
+  "@Webkit": {VENDOR: "Webkit"},
+  "@Opera": {VENDOR: "O"},
+  
   getComputedPropertyValue: function(view, element, propertyName) {
     return CSSStyleDeclaration.getPropertyValue(this.getComputedStyle(view, element, null), propertyName);
   },
   
   "@MSIE": {
+    VENDOR: "Ms",
+    
     getComputedPropertyValue: function(view, element, propertyName) {
       propertyName = this.toCamelCase(propertyName);
-      var value = element.currentStyle[propertyName];
+      var currentStyle  = element.currentStyle,
+          value = currentStyle[propertyName];
+      if (propertyName == "opacity" && value == null) return 1;
+      if (propertyName == "clip") {
+        return "rect(" + [
+          currentStyle.clipTop,
+          currentStyle.clipRight,
+          currentStyle.clipBottom,
+          currentStyle.clipLeft
+        ].join(", ") + ")";
+      }
       if (_METRICS.test(propertyName))
-        return _MSIE_getPixelValue(element, value) + "px";
+        return _MSIE_getPixelValue(element, value);
       if (!_MSIE5 && _COLOR.test(propertyName)) {
-        var rgb = _MSIE_getColorValue(element, propertyName == "color" ? "ForeColor" : "BackColor");
-        return (rgb == _RGB_BLACK && !_BLACK[value]) ? value : rgb;
+        switch (value) {
+          case "black":
+            return _BLACK;
+          case "white":
+            return _WHITE;
+          case "transparent":
+            return value;
+          default:
+            if (propertyName != "color") element.runtimeStyle.backgroundColor = value;
+            var rgb = _MSIE_getColorValue(element, propertyName == "color" ? "ForeColor" : "BackColor");
+            if (propertyName != "color") element.runtimeStyle.backgroundColor = "";
+            return rgb == _BLACK || rgb == _WHITE ? _toRGB(value) : rgb;
+        }
       }
       return value;
     }
   },
-  
+
   toCamelCase: function(string) {
-    return string.replace(/\-([a-z])/g, flip(String2.toUpperCase));
+    return string.replace(/\-([a-z])/g, _toUpperCase);
   }
 });
 
+var _toUpperCase = flip(String2.toUpperCase);
+
 function _MSIE_getPixelValue(element, value) {
-  if (_PIXEL.test(value)) return parseInt(value);
+  if (value == "none") return "0px";
+  if (!_NUMBER.test(value) || _PIXEL.test(value) || value.indexOf(" ") != -1) return value;
   var styleLeft = element.style.left;
   var runtimeStyleLeft = element.runtimeStyle.left;
   element.runtimeStyle.left = element.currentStyle.left;
@@ -916,11 +998,16 @@ function _MSIE_getPixelValue(element, value) {
   value = element.style.pixelLeft;
   element.style.left = styleLeft;
   element.runtimeStyle.left = runtimeStyleLeft;
-  return value;
+  return value + "px";
 };
 
 function _MSIE_getColorValue(element, type) {
+  if (element == element.document.documentElement) return _BLACK;
   // elements need to have "layout" for this to work.
+  var zoom = element.style.zoom;
+  if (!element.currentStyle.hasLayout) {
+    element.style.zoom = "100%"; // runtimeStyle is screwy for zoom
+  }
   if (element.createTextRange) {
     var range = element.createTextRange();
   } else {
@@ -928,7 +1015,15 @@ function _MSIE_getColorValue(element, type) {
     range.moveToElementText(element);
   }
   var color = range.queryCommandValue(type);
+  element.style.zoom = zoom;
   return format("rgb(%1, %2, %3)", color & 0xff, (color & 0xff00) >> 8,  (color & 0xff0000) >> 16);
+};
+
+function _toRGB(value) {
+  if (value.indexOf("#") != 0) return value;
+  var hex = value.slice(1);
+  if (hex.length == 3) hex = hex.replace(/(\w)/g, "$1$1");
+  return "rgb(" + Array2.map(hex.match(/(\w\w)/g), partial(parseInt, undefined, 16)).join(", ") + ")";
 };
 
 // =========================================================================
@@ -939,7 +1034,11 @@ function _MSIE_getColorValue(element, type) {
 
 var _CSSStyleDeclaration_ReadOnly = Binding.extend({
   getPropertyValue: function(style, propertyName) {
-    return this.base(style, _CSSPropertyNameMap[propertyName] || propertyName);
+    propertyName = _CSSPropertyNameMap[propertyName] || propertyName;
+    var value = style[propertyName];
+    if (value == undefined) value = this.base(style, propertyName);
+    if (_COLOR.test(propertyName)) value = _toRGB(value);
+    return value;
   },
   
   "@MSIE.+win": {
@@ -951,14 +1050,15 @@ var _CSSStyleDeclaration_ReadOnly = Binding.extend({
 
 var CSSStyleDeclaration = _CSSStyleDeclaration_ReadOnly.extend({
   setProperty: function(style, propertyName, value, priority) {
-    return this.base(style, _CSSPropertyNameMap[propertyName] || propertyName, value, priority);
+    propertyName = _CSSPropertyNameMap[propertyName] || propertyName;
+    this.base(style, propertyName.replace(/[A-Z]/g, _dash_lower), value, priority);
   },
   
   "@MSIE.+win": {
     setProperty: function(style, propertyName, value, priority) {
       if (propertyName == "opacity") {
-        value *= 100;
         style.opacity = value;
+        value *= 100;
         style.zoom = 1;
         style.filter = "Alpha(opacity=" + value + ")";
       } else {
@@ -979,6 +1079,10 @@ var CSSStyleDeclaration = _CSSStyleDeclaration_ReadOnly.extend({
     }
   }
 });
+
+function _dash_lower(string) {
+  return "-" + string.toLowerCase();
+};
 
 var _CSSPropertyNameMap = new Base({
   "@Gecko": {
@@ -1004,24 +1108,39 @@ AbstractView.implement(ViewCSS);
 
 // http://www.w3.org/TR/selectors-api/
 
+var _VISITED = /:visited/; // security
+
 var NodeSelector = Interface.extend({
   "@(element.querySelector)": {
     querySelector: function(node, selector) {
-      try {
-        var element = this.base(node, trim(selector));
-        if (element) return element;
-      } catch(x) {}
-      // assume it's an unsupported selector
+      if (!_VISITED.test(selector)) {
+        try {
+          return this.base(node, trim(selector));
+        } catch (x) {
+          // assume it's an unsupported selector
+        }
+      }
       return new Selector(selector).exec(node, 1);
     },
     
     querySelectorAll: function(node, selector) {
-      try {
-        var nodeList = this.base(node, trim(selector));
-        if (nodeList) return new StaticNodeList(nodeList);
-      } catch(x) {}
-      // assume it's an unsupported selector
+      if (!_VISITED.test(selector)) {
+        try {
+          return new StaticNodeList(this.base(node, trim(selector)));
+        } catch (x) {
+          // assume it's an unsupported selector
+        }
+      }
       return new Selector(selector).exec(node);
+    },
+
+    "@KHTML": { // http://code.google.com/p/base2/issues/detail?id=100
+      querySelectorAll: function(node, selector) {
+        if (!/[A-Z]/.test(selector) || "BackCompat" != (node ? node.ownerDocument || node : document).compatMode) {
+          return this.base(node, selector);
+        }
+        return new Selector(selector).exec(node);
+      }
     }
   },
 
@@ -1044,29 +1163,10 @@ extend(NodeSelector.prototype, {
   },
 
   querySelectorAll: function(selector) {
-    return extend(this.base(selector), "item", function(index) {
-      return DOM.bind(this.base(index));
-    });
-  }
-});
-
-// =========================================================================
-// DOM/selectors-api/DocumentSelector.js
-// =========================================================================
-
-// http://www.w3.org/TR/selectors-api/#documentselector
-
-var DocumentSelector = NodeSelector.extend();
-
-// =========================================================================
-// DOM/selectors-api/ElementSelector.js
-// =========================================================================
-
-var ElementSelector = NodeSelector.extend({
-  "@!(element.matchesSelector)": { // future-proof
-    matchesSelector: function(element, selector) {
-      return new Selector(selector).test(element);
-    }
+    var staticNodeList = this.base(selector),
+        i = staticNodeList.length;
+    while (i--) staticNodeList[i] = DOM.bind(staticNodeList[i]);
+    return staticNodeList;
   }
 });
 
@@ -1120,7 +1220,11 @@ var CSSParser = RegGrp.extend({
     return this.cache[selector] ||
       (this.cache[selector] = this.unescape(this.exec(this.escape(selector, simple))));
   },
-  
+
+  put: function(regexp, value) {
+    return this.base(regexp.replace(/ID/g, "\\w\\u00c0-\\uFFFF\\-"), value);
+  },
+
   unescape: function(selector) {
     // put string values back
     var strings = this._strings;
@@ -1138,7 +1242,7 @@ function _nthChild(match, args, position, last, not, and, mod, equals) {
   else if (args == "odd") args = "2n+1";
   args = args.split("n");
   var a = args[0] ? (args[0] == "-") ? -1 : parseInt(args[0]) : 1;
-  var b = parseInt(args[1]) || 0;
+  var b = parseInt(args[1], 10) || 0;
   var negate = a < 0;
   if (negate) {
     a = -a;
@@ -1181,9 +1285,9 @@ var XPathParser = CSSParser.extend({
     });
   },
 
-  "@opera(7|8|9\\.[1-4])": {
+  "@Opera(7|8|9\\.[1-4])": {
     unescape: function(selector) {
-      // opera pre 9.5 does not seem to support last() but I can't find any
+      // Opera pre 9.5 does not seem to support last() but I can't find any
       //  documentation to confirm this
       return this.base(selector.replace(/last\(\)/g, "count(preceding-sibling::*)+count(following-sibling::*)+1"));
     }
@@ -1208,14 +1312,14 @@ var XPathParser = CSSParser.extend({
   },
   
   rules: extend({}, {
-    "@!KHTML|opera": { // this optimisation does not work on Safari/opera
+    "@!KHTML|Opera": { // this optimisation does not work on Safari/opera
       // fast id() search
-      "(^|\\x02) (\\*|[\\w-]+)#([\\w-]+)": "$1id('$3')[self::$2]"
+      "(^|\\x02) (\\*|[ID]+)#([ID]+)": "$1id('$3')[self::$2]"
     },
     
     "@!KHTML": { // this optimisation does not work on Safari
       // optimise positional searches
-      "([ >])(\\*|[\\w-]+):([\\w-]+-child(\\(([^)]+)\\))?)": function(match, token, tagName, pseudoClass, $4, args) {
+      "([ >])(\\*|[ID]+):([ID]+-child(\\(([^)]+)\\))?)": function(match, token, tagName, pseudoClass, $4, args) {
         var replacement = (token == " ") ? "//*" : "/*";
         if (/^nth/i.test(pseudoClass)) {
           replacement += _xpath_nthChild(pseudoClass, args, "position()");
@@ -1229,15 +1333,15 @@ var XPathParser = CSSParser.extend({
   
   types: {
     identifiers: function(replacement, token) {
-      this[rescape(token) + "([\\w-]+)"] = replacement;
+      this[rescape(token) + "([ID]+)"] = replacement;
     },
     
     combinators: function(replacement, combinator) {
-      this[rescape(combinator) + "(\\*|[\\w-]+)"] = replacement;
+      this[rescape(combinator) + "(\\*|[ID]+)"] = replacement;
     },
     
     attributes: function(replacement, operator) {
-      this["\\[\\s*([\\w-]+)\\s*" + rescape(operator) +  "\\s*([^\\]\\s]*)\\s*\\]"] = replacement;
+      this["\\[\\s*([ID]+)\\s*" + rescape(operator) +  "\\s*([^\\]\\s]*)\\s*\\]"] = replacement;
     },
     
     pseudoClasses: function(replacement, pseudoClass) {
@@ -1264,15 +1368,15 @@ var XPathParser = CSSParser.extend({
       "$=": "[substring(@$1,string-length(@$1)-string-length('$2')+1)='$2']",
       "~=": "[contains(concat(' ',@$1,' '),' $2 ')]",
       "|=": "[contains(concat('-',@$1,'-'),'-$2-')]",
-      "!=": "[not(@$1='$2')]",
+//    "!=": "[not(@$1='$2')]",
       "=":  "[@$1='$2']"
     },
     
     pseudoClasses: { // pseudo class selectors
-      "link":             "[false]",
-      "visited":          "[false]",
+//    "link":             "[false]",
+//    "visited":          "[false]",
       "empty":            "[not(child::*) and not(text())]",
-//-   "lang()":           "[boolean(lang('$1') or boolean(ancestor-or-self::*[@lang][1][starts-with(@lang,'$1')]))]",
+//    "lang()":           "[boolean(lang('$1') or boolean(ancestor-or-self::*[@lang][1][starts-with(@lang,'$1')]))]",
       "first-child":      "[not(preceding-sibling::*)]",
       "last-child":       "[not(following-sibling::*)]",
       "not()":            _xpath_not,
@@ -1283,7 +1387,7 @@ var XPathParser = CSSParser.extend({
     }
   },
   
-  "@opera(7|8|9\\.[1-4])": {
+  "@Opera(7|8|9\\.[1-4])": {
     build: function() {
       this.optimised.pseudoClasses["last-child"] = this.values.pseudoClasses["last-child"];
       this.optimised.pseudoClasses["only-child"] = this.values.pseudoClasses["only-child"];
@@ -1298,7 +1402,7 @@ function _xpath_not(match, args) {
   if (!_notParser) _notParser = new XPathParser;
   return "[not(" + _notParser.exec(trim(args))
     .replace(/\[1\]/g, "") // remove the "[1]" introduced by ID selectors
-    .replace(/^(\*|[\w-]+)/, "[self::$1]") // tagName test
+    .replace(/^(\*|[\w\u00c0-\uFFFF\-]+)/, "[self::$1]") // tagName test
     .replace(/\]\[/g, " and ") // merge predicates
     .slice(1, -1)
   + ")]";
@@ -1320,15 +1424,36 @@ function _xpath_nthChild(match, args, position) {
 var Selector = Base.extend({
   constructor: function(selector) {
     this.toString = K(trim(selector));
+    if (!_parser.exec) _parser = new CSSParser(_parser);
   },
 
   exec: function(context, count, simple) {
     return Selector.parse(this, simple)(context, count);
   },
 
+  getSpecificity: function() {
+    var selector = _parser.escape(this);
+    if (selector.indexOf(",") == -1) {
+      return match(selector, _SPECIFICITY_ID).length * 10000 +
+        match(selector, _SPECIFICITY_CLASS).length * 100 +
+        match(selector, _SPECIFICITY_TAG).length;
+    } else {
+      return -1;
+    }
+  },
+
+  isPseudo: function() {
+    return _PSEUDO.test(_parser.escape(this));
+  },
+
   isSimple: function() {
-    if (!_parser.exec) _parser = new CSSParser(_parser);
     return !_COMBINATOR.test(trim(_parser.escape(this)));
+  },
+
+  split: function() {
+    return Array2.map(_parser.escape(this).split(","), function(selector) {
+      return new Selector(_parser.unescape(selector));
+    });
   },
 
   test: function(element) {
@@ -1364,7 +1489,7 @@ var Selector = Base.extend({
   "@MSIE": {
     exec: function(context, count, simple) {
       if (typeof context.selectNodes != "undefined" && !_NOT_XPATH.test(this)) { // xml
-        var method = single ? "selectSingleNode" : "selectNodes";
+        var method = count == 1 ? "selectSingleNode" : "selectNodes";
         return context[method](this.toXPath(simple));
       }
       return this.base(context, count, simple);
@@ -1388,9 +1513,14 @@ var Selector = Base.extend({
   }
 });
 
-var _COMBINATOR = /[^,]\s|[+>~]/;
+var _SPECIFICITY_ID = /#/g,
+    _SPECIFICITY_CLASS = /[.:\[]/g,
+    _SPECIFICITY_TAG = /^\w|[\s>+~]\w/g;
+    
+var _COMBINATOR = /[^,]\s|[+>~]/,
+    _PSEUDO = /:/;
 
-var _NOT_XPATH = ":(checked|disabled|enabled|contains|hover|active|focus)|^(#[\\w-]+\\s*)?\\w+$";
+var _NOT_XPATH = ":(checked|disabled|enabled|contains|hover|active|focus|link|visited)|^(#[\\w-]+\\s*)?\\w+$";
 if (detect("KHTML")) {
   if (detect("WebKit5")) {
     _NOT_XPATH += "|nth\\-|,";
@@ -1430,8 +1560,8 @@ Selector.pseudoClasses = { //-dean: lang()
   "hover":       "DocumentState.getInstance(d).isHover(e%1)",
   "active":      "DocumentState.getInstance(d).isActive(e%1)",
   "focus":       "DocumentState.getInstance(d).hasFocus(e%1)",
-  "link":        "false", // not implemented (security)
-  "visited":     "false"
+  "link":        "d.links&&Array2.contains(d.links,e%1)",
+  "visited":     "false" // not implemented (security)
 // nth-child     // defined below
 // not
 };
@@ -1467,7 +1597,7 @@ function sum(list) {
 
 // a hideous parser
 var _parser = {
-  "^(\\*|[\\w-]+)": function(match, tagName) {
+  "^(\\*|[ID]+)": function(match, tagName) {
     return tagName == "*" ? "" : format("if(e0.nodeName=='%1'[c]()){", tagName);
   },
 
@@ -1477,7 +1607,7 @@ var _parser = {
     return format(replacement, _index++, _index);
   },
 
-  " (\\*|[\\w-]+)#([\\w-]+)": function(match, tagName, id) { // descendant selector followed by ID
+  " (\\*|[ID]+)#([ID]+)": function(match, tagName, id) { // descendant selector followed by ID
     _wild = false;
     var replacement = "var e%2=_byId(d,'%4');if(e%2&&";
     if (tagName != "*") replacement += "e%2.nodeName=='%3'[c]()&&";
@@ -1486,7 +1616,7 @@ var _parser = {
     return format(replacement, _index++, _index, tagName, id);
   },
 
-  " (\\*|[\\w-]+)": function(match, tagName) { // descendant selector
+  " (\\*|[ID]+)": function(match, tagName) { // descendant selector
     _duplicate++; // this selector may produce duplicates
     _wild = tagName == "*";
     var replacement = format(_VAR, _index++, "%2", _index);
@@ -1497,7 +1627,7 @@ var _parser = {
     return format(replacement, _index, sum(_list), tagName);
   },
 
-  ">(\\*|[\\w-]+)": function(match, tagName) { // child selector
+  ">(\\*|[ID]+)": function(match, tagName) { // child selector
     var children = _MSIE && _index;
     _wild = tagName == "*";
     var replacement = _VAR + (children ? "children" : "childNodes");
@@ -1514,7 +1644,7 @@ var _parser = {
     return format(replacement, _index, sum(_list), tagName);
   },
 
-  "\\+(\\*|[\\w-]+)": function(match, tagName) { // direct adjacent selector
+  "\\+(\\*|[ID]+)": function(match, tagName) { // direct adjacent selector
     var replacement = "";
     if (_wild && _MSIE) replacement += "if(e%1.nodeName!='!'){";
     _wild = false;
@@ -1524,7 +1654,7 @@ var _parser = {
     return format(replacement, _index, tagName);
   },
 
-  "~(\\*|[\\w-]+)": function(match, tagName) { // indirect adjacent selector
+  "~(\\*|[ID]+)": function(match, tagName) { // indirect adjacent selector
     var replacement = "";
     if (_wild && _MSIE) replacement += "if(e%1.nodeName!='!'){";
     _wild = false;
@@ -1538,21 +1668,21 @@ var _parser = {
     return format(replacement, _index, tagName);
   },
 
-  "#([\\w-]+)": function(match, id) { // ID selector
+  "#([ID]+)": function(match, id) { // ID selector
     _wild = false;
     var replacement = "if(e%1.id=='%2'){";
     if (_list[_group]) replacement += format("i%1=n%1.length;", sum(_list));
     return format(replacement, _index, id);
   },
 
-  "\\.([\\w-]+)": function(match, className) { // class selector
+  "\\.([ID]+)": function(match, className) { // class selector
     _wild = false;
     // store RegExp objects - slightly faster on IE
     _reg.push(new RegExp("(^|\\s)" + rescape(className) + "(\\s|$)"));
     return format("if(e%1.className&&reg[%2].test(e%1.className)){", _index, _reg.length - 1);
   },
 
-  ":not\\((\\*|[\\w-]+)?([^)]*)\\)": function(match, tagName, filters) { // :not pseudo class
+  ":not\\((\\*|[ID]+)?([^)]*)\\)": function(match, tagName, filters) { // :not pseudo class
     var replacement = (tagName && tagName != "*") ? format("if(e%1.nodeName=='%2'[c]()){", _index, tagName) : "";
     replacement += _parser.exec(filters);
     return "if(!" + replacement.slice(2, -1).replace(/\)\{if\(/g, "&&") + "){";
@@ -1566,11 +1696,11 @@ var _parser = {
     return format(replacement, _index) + _nthChild(match, args, "i", last, "!", "&&", "% ", "==") + "){";
   },
 
-  ":([\\w-]+)(\\(([^)]+)\\))?": function(match, pseudoClass, $2, args) { // other pseudo class selectors
+  ":([ID]+)(\\(([^)]+)\\))?": function(match, pseudoClass, $2, args) { // other pseudo class selectors
     return "if(" + format(Selector.pseudoClasses[pseudoClass] || "throw", _index, args || "") + "){";
   },
 
-  "\\[\\s*([\\w-]+)\\s*([^=]?=)?\\s*([^\\]\\s]*)\\s*\\]": function(match, attr, operator, value) { // attribute selectors
+  "\\[\\s*([ID]+)\\s*([^=]?=)?\\s*([^\\]\\s]*)\\s*\\]": function(match, attr, operator, value) { // attribute selectors
     value = trim(value);
     if (_MSIE) {
       var getAttribute = "Element.getAttribute(e%1,'%2')";
@@ -1632,7 +1762,6 @@ var _parser = {
   Selector.parse = function(selector, simple) {
     var cache = simple ? _simple : _cache;
     if (!cache[selector]) {
-      if (!_parser.exec) _parser = new CSSParser(_parser);
       _reg = []; // store for RegExp objects
       _list = [];
       var fn = "";
@@ -1658,7 +1787,6 @@ var _parser = {
       var total = sum(_list);
       for (var i = 1; i <= total; i++) {
         args += ",a" + i;
-        //state.push("i" + i);
         state.push("i" + i + "?(i" + i + "-1):0");
       }
       if (total) {
@@ -1689,23 +1817,21 @@ var _parser = {
 var StaticNodeList = Base.extend({
   constructor: function(nodes) {
     nodes = nodes || [];
-    this.length = nodes.length;
-    this.item = function(index) {
-      if (index < 0) index += this.length; // starting from the end
-      return nodes[index];
-    };
     if (nodes.unsorted) nodes.sort(_SORTER);
+    var i = this.length = nodes.length;
+    while (i--) this[i] = nodes[i];
   },
   
   length: 0,
-  
+
   forEach: function(block, context) {
-    for (var i = 0; i < this.length; i++) {
-      block.call(context, this.item(i), i, this);
+    var length = this.length;
+    for (var i = 0; i < length; i++) {
+      block.call(context, this[i], i, this);
     }
   },
 
-  item: Undefined, // defined in the constructor function
+  item: Array2.prototype.item,
 
   not: function(test, context) {
     return this.filter(not(test), context);
@@ -1718,11 +1844,8 @@ var StaticNodeList = Base.extend({
   "@(XPathResult)": {
     constructor: function(nodes) {
       if (nodes && nodes.snapshotItem) {
-        this.length = nodes.snapshotLength;
-        this.item = function(index) {
-          if (index < 0) index += this.length; // starting from the end
-          return nodes.snapshotItem(index);
-        };
+        var i = this.length = nodes.snapshotLength;
+        while (i--) this[i] = nodes.snapshotItem(i);
       } else this.base(nodes);
     }
   }
@@ -1760,8 +1883,8 @@ var _SORTER = _INDEXED ? function(node1, node2) {
 // DOM/selectors-api/implementations.js
 // =========================================================================
 
-Document.implement(DocumentSelector);
-Element.implement(ElementSelector);
+Document.implement(NodeSelector);
+Element.implement(NodeSelector);
 
 // =========================================================================
 // DOM/html/HTMLDocument.js
@@ -1771,7 +1894,8 @@ Element.implement(ElementSelector);
 
 var HTMLDocument = Document.extend(null, {
   bind: function(document) {
-    DocumentState.createState(document);
+    DocumentState.createStateattachments,
+        (document);
     return this.base(document);
   }
 });
@@ -1783,7 +1907,7 @@ var HTMLDocument = Document.extend(null, {
 var HTMLElement = Element.extend(null, {
   bindings: {},
   tags: "*",
-  
+
   bind: function(element) {
     if (!element.classList) {
       element.classList = new _ElementClassList(element);
@@ -1791,14 +1915,32 @@ var HTMLElement = Element.extend(null, {
     if (!element.ownerDocument) {
       element.ownerDocument = Traversal.getOwnerDocument(element);
     }
+  /*@cc_on @*/
+  /*@if (@_jscript_version < 5.7) {
+    for (var i in this.prototype) {
+      if (i != "base" && i != "extend") {
+        var ancestor = element[i];
+        element[i] = this.prototype[i];
+        element[i].ancestor = ancestor;
+      }
+    }
+    // http://www.hedgerwow.com/360/dhtml/ie6_memory_leak_fix/
+    try {
+      return element;
+    } finally {
+      element = null;
+    }
+  }
+  @else @*/
     return this.base(element);
+  /*@end @*/
   },
 
   extend: function() {
     // Maintain HTML element bindings.
     // This allows us to map specific interfaces to elements by reference
     // to tag name.
-    var binding = base(this, arguments);
+    var binding = this.base.apply(this, arguments);
     forEach.csv(binding.tags, function(tagName) {
       HTMLElement.bindings[tagName] = binding;
     });
@@ -1810,6 +1952,14 @@ HTMLElement.extend(null, {
   tags: "APPLET,EMBED",  
   bind: I // Binding not allowed for these elements.
 });
+
+/*@if (@_jscript_version < 5.7)
+  for (var i in HTMLElement.prototype) {
+    if (i != "base" && i != "extend") {
+      HTMLElement.prototype[i] = new Function("var a=base2.JavaScript.Array2.slice(arguments),m=base2.DOM.HTMLElement."+i+";a.unshift(this);return m.apply(m,a)");
+    }
+  }
+/*@end @*/
 
 // =========================================================================
 // DOM/html/ClassList.js
@@ -1828,7 +1978,7 @@ var ClassList = Module.extend({
 
   has: function(element, token) {
     var regexp = new RegExp("(^|\\s)" + token + "(\\s|$)");
-    return regexp.test(element.className);
+    return regexp.test(element.className || "");
   },
 
   remove: function(element, token) {
@@ -1841,21 +1991,320 @@ var ClassList = Module.extend({
   }
 });
 
-function _ElementClassList(element) {
-  this.add = function(token) {
-    ClassList.add(element, token);
-  };
-  this.has = function(token) {
-    return ClassList.has(element, token);
-  };
-  this.remove = function(token) {
-    ClassList.remove(element, token);
+// a constructor that binds ClassList objects to elements
+var _ElementClassList = new Function("e", Array2.reduce(String2.csv("add,has,remove,toggle"), function(body, method) {
+  return body += "this." + method + "=function(t){return base2.DOM.ClassList."+ method + "(e,t)};"
+}, ""));
+
+// =========================================================================
+// DOM/cssom/ElementView.js
+// =========================================================================
+
+// http://www.w3.org/TR/cssom-view/#the-elementview
+
+var _ABSOLUTE   = /absolute|fixed|relative/,
+    _FIX_BORDER = detect("KHTML") ? /^(TABLE|TD|TH)$/ : {test:False};
+
+var ElementView = Interface.extend({
+  getBoundingClientRect: function(element) {
+    return element.getBoundingClientRect();
+  },
+
+  "@!(element.getBoundingClientRect)": {
+    getBoundingClientRect: function(element) {
+      var document = element.ownerDocument,
+          view = document.defaultView;
+
+      switch (element.nodeName) {
+        case "HTML":
+          var offset = _offsets.getViewport(document);
+          break;
+        case "BODY":
+          offset = _offsets.getBody(document);
+          break;
+        default:
+          offset = this.getOffsetFromBody(element);
+          if (_ABSOLUTE.test(view.getComputedStyle(document.body, null).position)) {
+            var bodyOffset = _offsets.getBody(document);
+            offset.left += bodyOffset.left;
+            offset.top += bodyOffset.top;
+          }
+      }
+
+      offset.left -= view.pageXOffset;
+      offset.top -= view.pageYOffset;
+
+      return {
+        left:   offset.left,
+        top:    offset.top,
+        right:  offset.left + element.clientWidth,
+        bottom: offset.top + element.clientHeight
+      };
+    },
+    
+    "@(document.getBoxObjectFor)": {
+      getBoundingClientRect: function(element) {
+        var document = element.ownerDocument,
+            view = document.defaultView,
+            box = document.getBoxObjectFor(element),
+            computedStyle = view.getComputedStyle(element, null),
+            left = box.x - parseInt(computedStyle.borderLeftWidth) - view.pageXOffset,
+            top = box.y - parseInt(computedStyle.borderTopWidth) - view.pageYOffset;
+            
+        if (element.nodeName != "HTML") {
+          var rootStyle = view.getComputedStyle(document.documentElement, null);
+          left += parseInt(rootStyle.marginLeft);
+          top += parseInt(rootStyle.marginTop);
+        }
+        
+        return {
+          left: left,
+          top: top,
+          right: left + element.clientWidth,
+          bottom: top + element.clientHeight
+        };
+      }
+    }
+  },
+
+  "@MSIE": {
+    getBoundingClientRect: function(element) {
+      var clientRect = element.getBoundingClientRect(),
+          document = element.document;
+
+      if (element.nodeName == "HTML") {
+        var viewportOffset = _offsets.getViewport(document),
+            root = document.documentElement,
+            left = viewportOffset.left - root.scrollLeft,
+            top = viewportOffset.left - root.scrollTop;
+        return {
+          left: left,
+          top: top,
+          right: left + clientRect.right - clientRect.left,
+          bottom: top + clientRect.bottom - clientRect.top
+        };
+      } else {
+        adjust = document.documentMode > 7 ? 0 : -2;
+        return {
+          left: clientRect.left + adjust,
+          top: clientRect.top + adjust,
+          right: clientRect.right + adjust,
+          bottom: clientRect.bottom + adjust
+        };
+      }
+    }
+  }
+}, {
+  getOffsetFromBody: function(element) {
+    var left = 0, top = 0,
+        document = Traversal.getOwnerDocument(element),
+        view = document.defaultView;
+        root = document.documentElement,
+        body = document.body;
+        
+    if (element != body) {
+      var clientRect = this.getBoundingClientRect(element);
+      left = clientRect.left;
+      top = clientRect.top;
+      if (_ABSOLUTE.test(ViewCSS.getComputedPropertyValue(view, element, "position"))) {
+        var offset = this.getBoundingClientRect(body);
+        left -= offset.left;
+        top -= offset.top;
+      } else {
+        left += view ? view.pageXOffset : root.scrollLeft;
+        top += view ? view.pageYOffset : root.scrollTop;
+      }
+    }
+    
+    return {
+      left: left,
+      top: top
+    };
+  },
+
+  "@!(element.getBoundingClientRect||document.getBoxObjectFor)": {
+    getOffsetFromBody: function(element) {
+      var left = 0, top = 0,
+          body = element.ownerDocument.body;
+
+      while (element && element != body) {
+        left += element.offsetLeft;
+        top += element.offsetTop;
+        if (_FIX_BORDER.test(element.nodeName)) {
+          top  += (element.clientLeft || 0);
+          left += (element.clientTop || 0);
+        }
+        element = element.offsetParent;
+      }
+      
+      return {
+        left: left,
+        top: top
+      };
+    },
+
+    "@Webkit": {
+      getOffsetFromBody: function(element) {
+        var offset = this.base(element),
+            document = element.ownerDocument,
+            view = document.defaultView,
+            body = document.body,
+            position = view.getComputedStyle(element, null).position;
+            
+        if (position == "fixed") {
+          var bodyOffset = _offsets.getBody(document);
+          offset.left -= bodyOffset.left;
+          offset.top  -= bodyOffset.top;
+        } else if ((position != "absolute" || element.offsetParent != body) && !_ABSOLUTE.test(view.getComputedStyle(body, null).position)) {
+          var viewportOffset = _offsets.getViewport(document);
+          offset.left += viewportOffset.left;
+          offset.top  += viewportOffset.top;
+        }
+        
+        return offset;
+      }
+    },
+
+    "@Opera": {
+      getOffsetFromBody: function(element) {
+        var offset = this.base(element),
+            document = element.ownerDocument,
+            view = document.defaultView,
+            body = document.body;
+            
+        if (_ABSOLUTE.test(view.getComputedStyle(body, null).position)) {
+          var bodyOffset = _offsets.getBody(document);
+          offset.left -= bodyOffset.left;
+          offset.top  -= bodyOffset.top;
+        }
+        
+        return offset;
+      }
+    }
+  },
+
+  "@Gecko1\\.([^9]|9.0)": {
+    getOffsetFromBody: function(element) {
+      var offset = this.base(element),
+          document = element.ownerDocument,
+          view = document.defaultView;
+          
+      if (!_ABSOLUTE.test(view.getComputedStyle(document.body, null).position)) {
+        var rootStyle = view.getComputedStyle(document.documentElement, null);
+        offset.left -= parseInt(rootStyle.marginLeft);
+        offset.top -= parseInt(rootStyle.marginTop);
+      }
+      
+      return offset;
+    }
+  },
+  
+  // Manage offsetX/Y.
+
+  getOffsetXY: function(element, clientX, clientY) {
+    if (element.clientLeft == null) {
+      var computedStyle = element.ownerDocument.defaultView.getComputedStyle(element, null);
+      clientX -= parseInt(computedStyle.borderLeftWidth);
+      clientY -= parseInt(computedStyle.borderTopWidth);
+    } else {
+      clientX -= element.clientLeft;
+      clientY -= element.clientTop;
+    }
+    var clientRect = this.getBoundingClientRect(element);
+    return {
+      x: clientX - clientRect.left,
+      y: clientY - clientRect.top
+    }
+  },
+
+  "@(element.getBoundingClientRect&&element.clientLeft===0)": { // slightly faster if these properties are defined
+    getOffsetXY: function(element, clientX, clientY) {
+      var clientRect = element.getBoundingClientRect();
+      return {
+        x: clientX - clientRect.left - element.clientLeft,
+        y: clientY - clientRect.top - element.clientTop
+      }
+    }
+  }
+});
+
+
+var _offsets = new Base({
+  getBody: function(document) {
+    var left = 0, top = 0,
+        view = document.defaultView,
+        body = document.body,
+        bodyStyle = view.getComputedStyle(body, null);
+        
+    if (_ABSOLUTE.test(bodyStyle.position)) {
+      left += parseInt(bodyStyle.left) + parseInt(bodyStyle.marginLeft);
+      top  += parseInt(bodyStyle.top) + parseInt(bodyStyle.marginTop);
+      if (bodyStyle.position == "relative") {
+        var rootStyle = view.getComputedStyle(document.documentElement, null);
+        left += parseInt(rootStyle.paddingLeft) + parseInt(rootStyle.marginLeft);
+        top  += parseInt(rootStyle.paddingTop) + parseInt(rootStyle.marginTop);
+      }
+    } else {
+      var dummy = document.createElement("div");
+      body.insertBefore(dummy, body.firstChild);
+      left += dummy.offsetLeft - parseInt(bodyStyle.paddingLeft);
+      top += dummy.offsetTop - parseInt(bodyStyle.paddingTop);
+      body.removeChild(dummy);
+    }
+    
+    return {
+      left: left,
+      top: top
+    };
+  },
+
+  "@Webkit": {
+    getBody: function(document) {
+      var offset = this.base(document),
+          view = document.defaultView,
+          body = document.body;
+          
+      if (!_ABSOLUTE.test(view.getComputedStyle(body, null).position)) {
+        var viewportOffset = this.getViewport(document);
+        offset.left += viewportOffset.left;
+        offset.top  += viewportOffset.top;
+      }
+      return offset;
+    }
+  },
+
+  getViewport: function(document) {
+    var view = document.defaultView,
+        element = document.documentElement;
+    return {
+      left: parseInt(ViewCSS.getComputedPropertyValue(view, element, "margin-left")) || 0,
+      top: parseInt(ViewCSS.getComputedPropertyValue(view, element, "margin-top")) || 0
+    };
+  },
+
+  "@MSIE[56]": {
+    getViewport: K({left: 0, top: 0})
+  },
+
+  "@(true)": {
+    getBody: _memoise("body"),
+    getViewport: _memoise("viewport")
+  }
+});
+
+function _memoise(type) {
+  return function(document) {
+    var key = type + (document.base2ID || assignID(document));
+    if (!_memoise[key]) _memoise[key] = this.base(document);
+    return copy(_memoise[key]);
   };
 };
 
-_ElementClassList.prototype.toggle = function(token) {
-  this[this.has(token) ? "remove" : "add"](token);
-};
+// =========================================================================
+// DOM/cssom/implementations.js
+// =========================================================================
+
+HTMLElement.implement(ElementView);
 
 // =========================================================================
 // DOM/DocumentState.js
@@ -1973,15 +2422,19 @@ var DocumentState = Base.extend({
       if (!events || !canDelegate) {
         if (!events) events = this.events[type] = {};
         if (canDelegate || !target) target = this.document;
-        var state = this;
-        target["on" + type] = function(event) {
-          if (!event) {
-            event = Traversal.getDefaultView(this).event;
-          }
-          if (event) state.handleEvent(event);
-        };
+        this.addEvent(type, target);
       }
       return events;
+    },
+
+    addEvent: function(type, target) {
+      var state = this;
+      target["on" + type] = function(event) {
+        if (!event) {
+          event = Traversal.getDefaultView(this).event;
+        }
+        if (event) state.handleEvent(event);
+      };
     },
 
     "@MSIE.+win": {
@@ -1999,27 +2452,22 @@ var DocumentState = Base.extend({
       },
 
       fireEvent: function(type, event) {
-        event = copy(event);
+        event = Event.cloneEvent(event);
         event.type = type;
         this.handleEvent(event);
       },
 
-      registerEvent: function(type, target) {
-        var events = this.events[type];
-        var canDelegate = _CAN_DELEGATE.test(type);
-        if (!events || !canDelegate) {
-          if (!events) events = this.events[type] = {};
-          if (canDelegate || !target) target = this.document;
+      addEvent: function(type, target) {
+        if (target["on" + type] !== undefined) {
           var state = this;
           target.attachEvent("on" + type, function(event) {
-            event.target = event.srcElement || state.document;
+            event.target = event.srcElement || target;
             state.handleEvent(event);
             if (state["after" + type]) {
               state["after" + type](event);
             }
           });
         }
-        return events;
       },
 
       onDOMContentLoaded: function(event) {
@@ -2053,7 +2501,8 @@ var DocumentState = Base.extend({
       },
 
       setFocus: function(target) {
-        var change = this.events.change, select = this.events.select;
+        var change = this.events.change && target.onchange !== undefined,
+           select = this.events.select && target.onselect !== undefined;
         if (change || select) {
           var dispatch = this._dispatch;
           if (change) target.attachEvent("onchange", dispatch);
@@ -2092,10 +2541,12 @@ var DocumentState = Base.extend({
   }
 }, {
   init: function() {
-    assignID(document);
-    DocumentState = this;
-    this.createState(document);
-    new DOMContentLoadedEvent(document);
+    if (global.document) {
+      assignID(document);
+      DocumentState = this;
+      this.createState(document);
+      new DOMContentLoadedEvent(document);
+    }
   },
 
   createState: function(document) {
@@ -2106,8 +2557,9 @@ var DocumentState = Base.extend({
     return this[base2ID];
   },
 
-  getInstance: function(target) {
-    return this[Traversal.getDocument(target).base2ID];
+  getInstance: function(node) {
+    var document = Traversal.getDocument(node);
+    return this[document.base2ID] || this.createState(document);
   }
 });
 

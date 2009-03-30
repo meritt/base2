@@ -1,5 +1,5 @@
 /*
-  base2 - copyright 2007-2008, Dean Edwards
+  base2 - copyright 2007-2009, Dean Edwards
   http://code.google.com/p/base2/
   http://www.opensource.org/licenses/mit-license.php
 
@@ -7,7 +7,7 @@
     Doeke Zanstra
 */
 
-// timestamp: Sat, 06 Sep 2008 16:52:33
+// timestamp: Mon, 30 Mar 2009 18:26:18
 
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 

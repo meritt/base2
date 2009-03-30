@@ -1,5 +1,5 @@
 /*
-  base2 - copyright 2007-2008, Dean Edwards
+  base2 - copyright 2007-2009, Dean Edwards
   http://code.google.com/p/base2/
   http://www.opensource.org/licenses/mit-license.php
 
@@ -7,7 +7,7 @@
     Doeke Zanstra
 */
 
-// timestamp: Sat, 06 Sep 2008 16:52:33
+// timestamp: Mon, 30 Mar 2009 18:26:18
 
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
@@ -17,32 +17,35 @@ new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
 // Browser chrome.
 
-// Credits: large parts of this code were written by Erik Arvidsson.
+// Credits: some code written by Erik Arvidsson.
 
-var chrome = new base2.Package(this, {
-  parent:  base2.JSB,
+base2.global.chrome = new base2.Package(this, {
   name:    "chrome",
-  version: "0.2",
-  imports: "Enumerable,Function2,DOM,JSB",
-  exports: "Chrome,ComboBox,Range,ProgressBar,Slider,Spinner,Rect",
-
-  //host:    ""
-  host:    "http://base2.googlecode.com/svn/trunk/src/base2/JSB/chrome/"
+  version: "0.5",
+  imports: "Enumerable,Function2,DOM,jsb",
+  exports: "Popup,MenuList,ToolTip,dropdown,combobox,number,range,progressbar,slider,spinner,timepicker,datepicker,weekpicker,monthpicker,colorpicker",
+  parent:  base2.jsb
 });
 
 eval(this.imports);
 
-if (detect("MSIE6")) {
+EventTarget.addEventListener(document, "textresize", function() {
+  Array2.batch(document.getElementsByTagName("input"), function(input,i) {
+    var type = input.className.replace(/^.*jsb\-(\w+).*$/, "$1"),
+        behavior = chrome[type];
+    if (behavior) behavior.layout(input);
+  }, 100);
+}, false);
+
+/*if (detect("MSIE6")) {
   try {
     document.execCommand("BackgroundImageCache", false, true);
   } catch (ex) {}
-}
+}*/
 
 // =========================================================================
 // chrome/header.js
 // =========================================================================
-
-var _MSIE  = detect("MSIE");
 
 var PX = "px";
 
@@ -52,79 +55,94 @@ var _ACTIVE = "\x5factive",
     _TIMER  = "\x5ftimer";
 
 var _timers   = {}, // store for timeouts
-    _values   = {}, // store for computed values
-    _vertical = {}; // vertical controls
+    _preventScroll = {
+      onfocus: function(element, event) {
+        if (!element.onscroll) {
+          element.scrollTop = 0;
+          element.onscroll = _resetScroll;
+        }
+        this.base(element, event);
+      }
+    };
 
 function _resetScroll() {
   this.scrollTop = 0;
 };
 
-var _WIDTH = "clientWidth";
-var _HEIGHT = "clientHeight";
+function _layout(element) {
+  this.layout(element);
+};
 
-// =========================================================================
-// chrome/Theme.js
-// =========================================================================
-
-var Theme = Base.extend({
-  constructor: function(name) {
-    this.load(name);
-  },
-
-  name: "default",
-
-  createStyleSheet: function(cssText) {
-    if (document.body) {
-      var style = document.createElement("style");
-      style.type = "text/css";
-      style.textContent = cssText;
-      new Selector("head").exec(document, 1).appendChild(style);
-    } else {
-      document.write(format('<style type="text/css">%1<\/style>', cssText));
-    }
-  },
-
-  load: function(name) {
-    //return;
-    if (name) this.name = name;
-    this.createStyleSheet(format(css, this));
-  },
-
-  toString: function() {
-    return chrome.host + this.name + "/";
-  },
-
-  "@MSIE": {
-    createStyleSheet: function(cssText) {
-      document.createStyleSheet().cssText = cssText;
-    }
+function _date_onchange(element) {
+  if (element.value == "" || this.getValueAsDate(element)) {
+    this.removeClass(element, "jsb-error");
+  } else {
+    this.addClass(element, "jsb-error");
   }
-}, {
+};
+
+var _WIDTH  = "clientWidth",
+    _HEIGHT = "clientHeight";
+
+var _EVENT  = /^on(DOM\w+|[a-z]+)$/,
+    _TEXT   = Traversal.TEXT;
+
+function pad(number, length) {
+  return "0000".slice(0, (length || 2) - String(number).length) + number;
+};
+
+if (window.pageXOffset == null) {
+  var _CLIENT      = document.documentElement,
+      _SCROLL_LEFT = "scrollLeft",
+      _SCROLL_TOP  = "scrollTop";
+} else {
+      _CLIENT      = window;
+      _SCROLL_LEFT = "pageXOffset";
+      _SCROLL_TOP  = "pageYOffset";
+}
+
+if (detect("(style." + ViewCSS.VENDOR + "BorderImage!==undefined||style.borderImage!==undefined)")) {
+  base2.userAgent += ";borderImage=true";
+}
+
+// =========================================================================
+// chrome/theme.js
+// =========================================================================
+
+jsb.theme = new Base({
   detect: K("default"),
 
   "@Windows": {
     detect: function() {
-      var element = document.createElement("input");
-      var head = NodeSelector.querySelector(document, "body,head");
-      head.appendChild(element);
-      // detect XP theme by inspecting the ActiveCaption colour
-      element.style.color = "ActiveCaption";
-      var color = element.style.color;
-      if (!_XP_DETECT[color]) {
-        color = ViewCSS.getComputedPropertyValue(document.defaultView, element, "color");
-        if (/rgb/.test(color)) color = eval(color);
-      }
-      head.removeChild(element);
-      return _XP_DETECT[color];
+      return _WIN_DETECT[_getActiveCaptionColor()] || "royale";
     },
 
-    "@MSIE6": {
+    "@NT6": { // vista
       detect: function() {
-        return this.base() || {
-      	"#ece9d8": "luna/blue",
-      	"#e0dfe3": "luna/silver",
-      	"#ebe9ed": "royale"
-        }[document.documentElement.currentStyle.scrollbarFaceColor] || "classic";
+        return _WIN_DETECT[_getActiveCaptionColor()] || "aero";
+      }
+    },
+
+    "@NT5": { // xp
+      detect: function() {
+        return _WIN_DETECT[_getActiveCaptionColor()] || "royale";
+      },
+
+      "@MSIE": {
+        detect: function() {
+          var value = _WIN_DETECT[_getActiveCaptionColor()],
+              scrollbarFaceColor = document.documentElement.currentStyle.scrollbarFaceColor;
+          if (value == "classic") {
+            if (scrollbarFaceColor == "#ffffff") return "classic/contrast/white";
+            if (scrollbarFaceColor == "#88c0b8") return "classic/marine";
+          }
+          return value || ({
+            "#ece9d8": "luna/blue",
+            // can't detect olive using scrollbar colour technique
+            "#e0dfe3": "luna/silver",
+            "#ebe9ed": "royale"
+          }[scrollbarFaceColor]) || "royale";
+        }
       }
     },
 
@@ -132,25 +150,60 @@ var Theme = Base.extend({
       detect: K("classic")
     }
   },
+  
+  "@Linux": {
+    detect: function() {
+      return _LINUX_DETECT[_getActiveCaptionColor()] || "default";
+    }
+  },
 
-  "@Safari|Camino": {
-    detect: K("aqua")
+  "@Webkit([1-4]|5[01]|52[^89])|Camino|Mac": {
+    detect: K("aqua"),
+
+    "@Chrome|Arora": {
+      detect: K("luna/blue")
+    }
   }
 });
 
-var _XP_DETECT = {
-  "#0a246a": "classic",
+var _WIN_DETECT = {
   "#0054e3": "luna/blue",
   "#8ba169": "luna/olive",
   "#c0c0c0": "luna/silver",
-  "#335ea8": "royale"
+  "#335ea8": "royale",
+  "#5e81bc": "royale",
+  "#99b4d1": "aero",
+  "#c4cbde": "aero",
+  "#343434": "zune",
+  "#c09f79": "human",
+  "#83a67f": "smooth",
+  "#000080": "classic",
+  "#0a246a": "classic/standard",
+  "#800000": "classic/brick",
+  "#008080": "classic/desert",
+  "#588078": "classic/eggplant",
+  "#5a4eb1": "classic/lilac",
+  "#484060": "classic/plum",
+  "#808000": "classic/wheat",
+  "#800080": "classic/contrast/black",
+  "#000000": "classic/contrast/white",
+  "#0000ff": "classic/contrast/high1",
+  "#00ffff": "classic/contrast/high2"
+}, _LINUX_DETECT = {
+  "#c4c6c0": "clearlooks",
+  "#eae8e3": "clearlooks",
+  "#dfe4e8": "clearlooks",
+  "#eaeaea": "clearlooks",
+  "#edeceb": "clearlooks",
+  "#efebe7": "human"
 };
 
-chrome.theme = Theme.detect();
-
-base2.userAgent += ";theme=" + chrome.theme;
-
 var rgba = rgb;
+
+jsb.theme.toString = K(jsb.theme.detect() || "default");
+
+base2.userAgent += ";theme=" + jsb.theme;
+
 function rgb(r, g, b) {
   function toHex(value) {
     return (value < 16 ? "0" : "") + value.toString(16);
@@ -158,217 +211,586 @@ function rgb(r, g, b) {
   return "#" + toHex(r) + toHex(g) + toHex(b);
 };
 
+function _getActiveCaptionColor() {
+  var element = document.createElement("input");
+  var head = behavior.querySelector("body,head");
+  head.appendChild(element);
+  // detect XP theme by inspecting the ActiveCaption colour
+  element.style.color = "ActiveCaption";
+  var color = element.style.color;
+  if (!_WIN_DETECT[color]) {
+    color = ViewCSS.getComputedPropertyValue(document.defaultView, element, "color");
+    if (/rgb/.test(color)) color = eval(color);
+  }
+  head.removeChild(element);
+  return color;
+};
 
 // =========================================================================
-// chrome/styleSheet.js
+// chrome/_MSIEShim.js
 // =========================================================================
 
-var _baseRule = extend({}, {
-  padding:                 "1px 2px 2px 1px",
-  borderWidth:             "2px 1px 1px 2px",
-  borderStyle:             "solid",
-  borderColor:             "#444 #ddd #ddd #444",
-  backgroundPosition:      "9999px 9999px",
-  backgroundAttachment:    "scroll!important",
-  backgroundRepeat:        "no-repeat!important",
+// Damn. This is way too big. :-(
+// All this because MSIE does not respect padding in <input> elements.
 
-  "@MSIE.+theme=classic": {
-    padding:               "1px",
-    borderWidth:           "2px",
-    borderStyle:           "inset",
-    borderColor:           "#fff"
+var _MSIEShim = {
+  onfocus: function(element) {
+    this.base.apply(this, arguments);
+    var behavior = this, timer;
+    if (!shim.control) {
+      shim.control = document.createElement("!");
+      document.body.insertBefore(shim.control, document.body.firstChild);
+      shim.attach(shim.control);
+    }
+    shim.element = element;
+    shim.behavior = behavior;
+    var style = shim.control.runtimeStyle;
+    style.cssText = "position:absolute;border:0;display:none;background-position-x:right";
+    style.pixelHeight = element.clientHeight;
+    style.pixelWidth = behavior.IMAGE_WIDTH;
+    style.backgroundImage = element.currentStyle.backgroundImage;
+    shim.layout();
+    element.attachEvent("onpropertychange", change);
+    element.attachEvent("onfocusout", function() {
+      element.detachEvent("onpropertychange", change);
+      element.detachEvent("onfocusout", arguments.callee);
+      element.scrollLeft = 9999;
+      delete shim.element;
+      style.display = "none";
+      detachEvent("onresize", resize);
+    });
+    function change(event) {
+      if (event.propertyName == "value") element.scrollLeft = 9999;
+    };
+    function position() {
+      var offset = behavior.getOffsetFromBody(element),
+          rect = element.getBoundingClientRect(),
+          adjustRight = rect.right - rect.left - element.offsetWidth;
+      style.pixelLeft = offset.left + adjustRight + element.clientWidth - behavior.IMAGE_WIDTH + element.clientLeft;
+      style.pixelTop = offset.top + element.clientTop;
+      timer = null;
+    };
+    function resize() {
+      if (!timer) timer = setTimeout(position, 50);
+    };
+    attachEvent("onresize", resize);
+    position();
+    setTimeout(function() {
+      style.display = "";
+    }, 1);
+  },
+  
+  onmouseover: _shimMouseOverOut,
+  onmouseout: _shimMouseOverOut,
+  onmouseup: function(element) {
+    this.base.apply(this, arguments);
+    if (element == shim.element) shim.layout();
   },
 
-  "@Gecko.+theme=classic": {
-    padding:               "1px",
-    borderWidth:           "2px",
-    MozBorderTopColors:    "ThreeDShadow ThreeDDarkShadow",
-    MozBorderRightColors:  "ThreeDHighlight ThreeDLightShadow",
-    MozBorderLeftColors:   "ThreeDShadow ThreeDDarkShadow",
-    MozBorderBottomColors: "ThreeDHighlight ThreeDLightShadow"
+  onkeydown: function(element, event, keyCode) {
+    this.base(element, event, keyCode);
+    if (shim.element == element) shim.layout();
   },
 
-  "@theme=aqua": {
-    padding:               "1px 2px 2px 2px",
-    borderWidth:           "2px 1px 1px 1px",
-    borderColor:           "#9e9e9e #b4b4b4 #dadada #b4b4b4"
+  onkeyup: function(element, event, keyCode) {
+    if (!Popup.current && keyCode == 35) { // END key
+      element.scrollLeft = 9999;
+    } else {
+      this.base(element, event, keyCode);
+    }
+    if (shim.element == element) shim.layout();
   },
+  
+  layout: function(element, state) {
+    this.base(element, state);
+    if (element == shim.element) {
+      shim.layout();
+    }
+  }
+};
 
-  "@theme=(luna|royale)": {
-    padding:               "2px",
-    borderWidth:           "1px",
-    borderStyle:           "solid",
-    borderColor:           "#a7a6aa",
+var shim = behavior.extend({
+  onmousedown: _shimMouse,
+  onmousemove: _shimMouse,
 
-    "@luna\\/blue": {
-      borderColor:         "#7f9db9"
-    },
-    "@luna\\/olive": {
-      borderColor:         "#a4b97f"
-    },
-    "@luna\\/silver": {
-      borderColor:         "#a5acb2"
+  onmouseover: _shimMouseOverOut2,
+  onmouseout: _shimMouseOverOut2,
+
+  layout: function() {
+    if (this.element) {
+      this.control.runtimeStyle.backgroundPositionY = this.element.currentStyle.backgroundPositionY;
     }
   }
 });
 
-function _baseRule_toString() {
-  return " {\n" +
-    map(this, function(value, propertyName) {
-      if (typeof value == "function") value = "none";
-      return "  " + propertyName.replace(/[A-Z]/g, function(captialLetter) {
-        return "-" + captialLetter.toLowerCase();
-      }) + ": " + value;
-    }).join(";\n") +
-  "\n}";
-};
-
-var css = {
-  toString: function() {
-    return map(this, function(properties, selector) {
-      return selector + properties;
-    }).join("\n");
+function _shimMouse(element, event, x, y, screenX, screenY) {
+  if (event.type == "mousedown") {
+    event.preventDefault();
   }
-};
-
-var styleSheet = {
-  combobox: {
-    paddingRight:    "19px!important",
-    backgroundImage: "url(%1menulist.png)!important",
-    width:           "8em",
-
-    "@Safari.+theme=aqua": {
-        WebkitAppearance: "menulist!important",
-        background:       "initial",
-        border:           "initial"
-    }
-  },
-  
-  "progressbar,slider": {
-    textIndent:        "-10em", // hide text for purely visual controls (Safari & Gecko)
-    cursor:            "default",
-    WebkitUserSelect:  "none",
-
-    "@MSIE": {
-      textIndent: 0,
-      lineHeight: "80em" // hide text for purely visual controls (MSIE)
-    }
-  },
-  
-  progressbar: {
-    padding:               "1px",
-    border:                "2px solid ThreeDDarkShadow",
-    WebkitBorderRadius:    "2px",
-    MozBorderRadius:       "2px",
-    MozBorderTopColors:    "ThreeDDarkShadow ThreeDHighlight",
-    MozBorderRightColors:  "ThreeDDarkShadow ThreeDHighlight",
-    MozBorderLeftColors:   "ThreeDDarkShadow ThreeDHighlight",
-    MozBorderBottomColors: "ThreeDDarkShadow ThreeDHighlight",
-    backgroundImage:       "url(%1progressbar.png)!important"
-  },
-
-  slider: {
-    minHeight:       "16px",
-    padding:         "3px",
-    border:          0,
-    backgroundColor: "transparent",
-    backgroundImage: "url(%1slider.png)!important",
-
-    "@Safari.+theme=aqua": {
-      outline:       "none!important"
-    },
-
-    "@Gecko": {
-      MozBorder:     "initial"
-    },
-
-    "@Gecko(1|200[0-2])": {
-      backgroundColor: "#f2f2f2"
-    }
-  },
-
-  "progressbar_focus,slider_focus": {
-    background: "initial",
-    padding:    "initial",
-    border:     "initial",
-    outline:    "1px dotted",
-    MozOutline: "1px dotted"
-  },
-
-  datalist: {
-    display: "none!important"
-  },
-
-  popup: {
-    display:     "none",
-    borderWidth: "1px",
-    position:    "absolute!important",
-    zIndex:      "999999!important",
-    cursor:      "default!important",
-    padding:     "0!important",
-    margin:      "0!important",
-
-    "!@theme=(luna|royale)": {
-      borderColor: "red"
-    },
-
-    "@Gecko|opera|theme=aqua": {
-      MozBorder:   "initial",
-      borderColor: "black",
-      borderStyle: "outset!important"
-    }
-  },
-  
-  spinner: {
-    textAlign:        "right",
-    width:            "5em",
-    paddingRight:     "19px!important",
-    backgroundImage:  "url(%1spinner.png)!important"
-  },
-  
-  "@WebKit|opera": {
-    "input[type=range]": {
-      background: "initial",
-      height:     "initial",
-      padding:    "initial",
-      border:     "initial"
-    }
+  event.stopPropagation();
+  if (this.element) {
+    var offset = ElementView.getOffsetXY(this.element, event.clientX, event.clientY);
+    this.behavior["on" + event.type](this.element, event, offset.x, offset.y, screenX, screenY);
   }
+  this.layout();
 };
 
-forEach.detect (styleSheet, function(properties, selector) {
-  if (/,/.test(selector)) {
-    forEach.csv(selector, partial(arguments.callee, properties));
-  } else {
-    if (/^[\w-]+$/.test(selector)) {
-      selector = "." + selector;
+function _shimMouseOverOut(element, event) {
+  if (!(element == shim.element && event.relatedTarget == shim.control)) {
+    this.base(element, event);
+  }
+  if (shim.element == element) shim.layout();
+};
+
+function _shimMouseOverOut2(element, event) {
+  if (this.element && event.relatedTarget != this.element) {
+    this.behavior["on" + event.type](this.element, event);
+  }
+  this.layout();
+};
+
+// =========================================================================
+// chrome/Popup.js
+// =========================================================================
+
+var Popup = Base.extend({
+  constructor: function() {
+    var body = this.body = this.createBody();
+    body.className = "jsb-popup";
+    var appearance = this.appearance;
+    if (appearance && appearance != "popup") {
+      body.className += " jsb-" + appearance;
     }
-    var rule = css[selector];
-    if (!rule) rule = css[selector] = extend({toString: _baseRule_toString}, _baseRule);
-    forEach.detect (properties, function(value, propertyName) {
-      if (value == "initial") {
-        forEach (rule, function(initialPropertyValue, initialPropertyName) {
-          if (initialPropertyName.indexOf(propertyName) == 0) {
-            delete rule[initialPropertyName];
-          }
-        });
-        delete rule[propertyName];
-      } else {
-        rule[propertyName] = value;
+    var popup = this;
+    for (var i in popup) {
+      if (_EVENT.test(i)) {
+        EventTarget.addEventListener(body, i.slice(2), this, /onblur|onfocus/.test(i));
       }
-    })
+    }
+  },
+
+  // properties
+
+  appearance: "popup",
+  width: "auto",
+  height: "auto",
+  element: null,
+  body: null,
+  position: "below",
+
+  scrollX: false,
+  scrollY: false,
+  
+  // events
+
+  handleEvent: function(event) {
+    switch (event.type) {
+      case "mouseover":
+      case "mouseout":
+        if (event.target == this.body) return;
+    }
+    this["on" + event.type](event);
+  },
+  
+  // methods
+
+  createBody: function() {
+    return document.createElement("div");
+  },
+
+  getRect: function() {
+    var documentElement = document.documentElement,
+        self = this,
+        body = self.body,
+        element = self.element,
+        rect = ElementView.getBoundingClientRect(element),
+        left = 0,
+        top = self.position == "below" ? element.offsetHeight - 1 : - 1 - element.offsetHeight,
+        width = self.width,
+        height = self.height;
+
+    if (width == "base") {
+      width = element.offsetWidth;
+    }
+
+    // resize
+    if (width == "auto" || height == "auto") {
+      if (height == "auto") {
+        height = body.scrollHeight + 2;
+        var unitHeight = self.getUnitHeight();
+        if (self.scrollY) {
+          height = Math.min(height, Math.max(documentElement.clientHeight - rect.bottom - 2, rect.top - 2));
+        }
+        if (unitHeight > 1) height = 2 + Math.floor(height / unitHeight) * unitHeight;
+      }
+      if (width == "auto") {
+        width = body.scrollWidth + 2;
+        if (height < body.scrollHeight + 2) width += 22; // scrollbars
+        if (self.scrollX) {
+          width = Math.min(width, Math.max(documentElement.clientWidth - rect.left - 2, rect.right - 2));
+        }
+        width =  Math.max(width, element.offsetWidth);
+      }
+    }
+    if (height > documentElement.clientHeight - rect.bottom && height < rect.bottom) {
+      top = -height;
+    }
+    if (width > documentElement.clientWidth - rect.right && width < rect.right) {
+      left = element.offsetWidth - width;
+    }
+    return new Rect(left, top, width, height);
+  },
+  
+  getUnitHeight: K(1),
+
+  hide: function() {
+    var parent = this.body.parentNode;
+    if (parent) parent.removeChild(this.body);
+    delete this.element;
+  },
+
+  isOpen: function() {
+    return !!this.body.parentNode;
+  },
+
+  layout: Undefined,
+
+  movesize: function() {
+    document.body.appendChild(this.body);
+    var style = this.body.style,
+        rect = this.getRect(),
+        offset = ElementView.getBoundingClientRect(this.element);
+    style.left = (rect.left + offset.left + _CLIENT[_SCROLL_LEFT]) + PX;
+    style.top = (offset.top + rect.top + _CLIENT[_SCROLL_TOP]) + PX;
+    style.width = (rect.width - 2) + PX;
+    style.height = (rect.height - 2) + PX;
+  },
+
+  querySelector: function(selector) {
+    return NodeSelector.querySelector(this.body, selector);
+  },
+
+  querySelectorAll: function(selector) {
+    return NodeSelector.querySelectorAll(this.body, selector);
+  },
+
+  render: function(html) {
+    this.body.innerHTML = html || "";
+  },
+
+  setUnselectable: function(element) {
+    //element.onselect =
+    //element.onselectstart = False;
+    element.unselectable = "on";
+    element.style.userSelect = "none";
+    element.style[ViewCSS.VENDOR + "UserSelect"] = "none";
+  },
+
+  show: function(element) {
+    this.element = element;
+    this.render();
+    this.style();
+    this.movesize();
+    this.layout();
+    this.body.style.visibility = "visible";
+  },
+
+  style: function() {
+    var style = this.body.style;
+    style.cssText = "left:-999px;top:-999px;";
+    var computedStyle = behavior.getComputedStyle(this.element);
+    forEach.csv("backgroundColor,color,fontFamily,fontWeight,fontStyle", function(propertyName) {
+      style[propertyName] = computedStyle[propertyName];
+    });
+    style.fontSize = parseInt(computedStyle.fontSize) + PX;
+    if (style.backgroundColor == "transparent") {
+      style.backgroundColor = "white";
+    }
+  },
+  
+  "@MSIE[56]": { // prevent <select> boxes from bleeding through
+    hide: function() {
+      this.base();
+      if (this._iframe.parentNode) {
+        document.body.removeChild(this._iframe);
+      }
+    },
+    
+    show: function(element) {
+      this.base(element);
+      if (!this._iframe) {
+        var iframe = this._iframe = document.createElement("iframe"),
+            style = iframe.style,
+            body = this.body,
+            bodyStyle = body.style;
+
+        style.cssText = "position:absolute;z-index:999998!important";
+        iframe.frameBorder = "0";
+        style.left = bodyStyle.left;
+        style.top = bodyStyle.top;
+        style.pixelWidth = body.offsetWidth;
+        style.pixelHeight = body.offsetHeight;
+      }
+      document.body.appendChild(this._iframe);
+    }
   }
 });
 
-new Theme(chrome.theme);
-
 // =========================================================================
-// chrome/Chrome.js
+// chrome/PopupWindow.js
 // =========================================================================
 
-var Chrome = Behavior.modify({
+var PopupWindow = Popup.extend({
+  constructor: function(owner) {
+    this.base();
+    this.owner = owner;
+  },
+  
+  // properties
+
+  controls: null,
+  owner: null,
+  scrollX: true,
+  scrollY: true,
+  
+  // events
+
+  onkeydown: function(event) {
+    switch (event.keyCode) {
+      case 27: // escape
+        this.hide();
+        break;
+      case 9: // tab
+        if (!this.tab(event.shiftKey ? -1 : 1)) event.preventDefault();
+        break;
+    }
+  },
+  
+  // methods
+  
+  isActive: function() {
+    return this._active || Element.matchesSelector(this.body, ":hover");
+  },
+
+  hide: function() {
+    PopupWindow.current = null;
+    forEach (this.controls, function(control) {
+      if (control.blur) control.blur();
+    });
+    this.base();
+  },
+
+  show: function(element) {
+    this.base(element);
+    PopupWindow.current = this;
+  },
+
+  tab: function(direction) {
+    if (!this.controls) return true;
+    var popup = this,
+        controls = this.controls.map(I),
+        current = popup.querySelector(":focus");
+    popup._active = false;
+    controls.unshift(null);
+    try {
+      forEach (controls, function(control, i) {
+        if (control == current) {
+          var next = controls[i + direction];
+          if (next) {
+            popup._active = true;
+            next.focus();
+            if (next.select) next.select();
+            throw StopIteration;
+          } else {
+            popup.element.focus();
+          }
+        }
+      });
+    } catch (ex) {}
+    return !popup._active;
+  }
+}, {
+  current: null,
+  
+  init: function() {
+    EventTarget.addEventListener(window, "blur", hidePopup, false);
+    EventTarget.addEventListener(document, "mousedown", hidePopup, false);
+    function hidePopup(event) {
+      var popup = PopupWindow.current,
+          target = event.target;
+      if (popup && target != document && target != popup.element && target != shim.control && !Traversal.contains(popup.body, target)) {
+        popup.hide();
+      }
+    };
+  }
+});
+
+// =========================================================================
+// chrome/MenuList.js
+// =========================================================================
+
+var MenuList = PopupWindow.extend({
+  constructor: function(owner) {
+    this.base(owner);
+    this.data = {};
+  },
+
+  // properties
+
+  appearance: "menulist",
+
+  // events
+
+  onmouseup: function() {
+    this.select(this.currentItem);
+  },
+
+  onkeydown: function(event) {
+    switch (event.keyCode) {
+      case 13: // return
+        this.select(this.currentItem);
+        event.preventDefault();
+        break;
+      case 38: // up
+        if (this.currentItem) {
+          this.highlight(Traversal.getPreviousElementSibling(this.currentItem));
+        } else {
+          this.highlight(Traversal.getFirstElementChild(this.body));
+        }
+        break;
+      case 40: // down
+        if (this.currentItem) {
+          this.highlight(Traversal.getNextElementSibling(this.currentItem));
+        } else {
+          this.highlight(Traversal.getFirstElementChild(this.body));
+        }
+        break;
+      default:
+        this.base(event);
+    }
+  },
+
+  onmouseover: function(event) {
+    this.highlight(event.target);
+  },
+
+  // methods
+  
+  getUnitHeight: function() {
+    var item = Traversal.getFirstElementChild(this.body);
+    return item ? item.offsetHeight : 1;
+  },
+
+  highlight: function(item) {
+    if (item) {
+      this.reset(this.currentItem);
+      this.currentItem = item;
+      with (item.style) {
+        backgroundColor = _HIGHLIGHT;
+        color = _HIGHLIGHT_TEXT;
+      }
+    }
+  },
+
+  layout: function() {
+    this.currentItem = null;
+    var data = this.data[this.element.uniqueID];
+    if (data) this.highlight(this.body.childNodes[data.index]);
+    else this.highlight(Traversal.getFirstElementChild(this.body));
+  },
+
+  render: function() {
+    var list = this.owner.get(this.element, "list"),
+        html = "";
+    if (list) {
+      if (list.nodeType == 1) {
+        html = match(list.innerHTML, /<option[^>]*>[^<]+/gi).join("").replace(/<option/gi, '<p unselectable="on"');
+      } else {
+        if (Array2.like(list)) {
+          list = Array2.combine(list);
+        }
+        html = reduce(list, function(html, text, value) {
+          return html += '<p unselectable="on" value"' + value + '">' + text + '</p>';
+        });
+      }
+    }
+    this.base(html);
+  },
+
+  reset: function(item) {
+    if (item) with (item.style) {
+      backgroundColor = "";
+      color = "";
+    }
+  },
+
+  select: function(item) {
+    var value = Element.getAttribute(item, "value") || trim(item[Traversal.TEXT]),
+        element = this.element;
+    this.data[element.uniqueID] = {
+      index: Traversal.getNodeIndex(item),
+      value: value
+    };
+    this.owner.setValue(element, value);
+    element.focus();
+    this.hide();
+  }
+});
+
+// =========================================================================
+// chrome/ToolTip.js
+// =========================================================================
+
+var ToolTip = Popup.extend({ // helper text
+  appearance: "tooltip",
+  //position: "above",
+  text: "",
+
+  hide: function() {
+    this.base();
+    ToolTip.current = null;
+    clearTimeout(this._timeout);
+  },
+
+  render: function() {
+    this.base('<div style="padding:2px">' + this.text + '</div>');
+  },
+  
+  show: function(element, text) {
+    // show the tooltip for 3 secs. If the user hovers over the tooltip (or the
+    // original control itself) then pause for another 1 sec. After that, hide
+    // the tootip.
+    var tooltip = this;
+    if (ToolTip.current) ToolTip.current.hide();
+    tooltip.text = text;
+    clearTimeout(tooltip._timeout);
+    tooltip._timeout = setTimeout(function() {
+      if (Element.matchesSelector(element, ":hover") || Element.matchesSelector(tooltip.body, ":hover")) {
+        tooltip._timeout = setTimeout(arguments.callee, ToolTip.TIMEOUT / 3); // user is hovering over the control
+      } else {
+        delete tooltip._timeout;
+        tooltip.hide();
+      }
+    }, ToolTip.TIMEOUT);
+    this.base(element); // default behaviour
+    ToolTip.current = tooltip;
+  }
+}, {
+  TIMEOUT: 3000,
+  
+  current: null
+});
+
+// =========================================================================
+// chrome/control.js
+// =========================================================================
+
+var control = behavior.extend({
+  // constants
+  
   HORIZONTAL: 0,
   VERTICAL: 1,
+  IMAGE_WIDTH: 17,
 
   states: {
     normal:   0,
@@ -377,85 +799,97 @@ var Chrome = Behavior.modify({
     disabled: 3,
     length:   4
   },
-
-  appearance: "",
-
-  imageWidth: 17,
   
-  oncontentready: function(element) {
-    if (element[_HEIGHT] > element[_WIDTH]) {
-      this.setOrientation(element, this.VERTICAL);
+  // properties
+
+  allowVertical: false,
+  appearance: "none",
+  
+  // events
+  
+  onattach: function(element) {
+    if (this.isNativeControl != False && this.isNativeControl(element)) {
+      this.detach(element);
+    } else {
+      if (this.allowVertical && element[_HEIGHT] > element[_WIDTH]) {
+        this.setOrientation(element, this.VERTICAL);
+      }
+      this.layout(element, this.states[element.disabled ? "disabled" : "normal"]); // initial state
     }
-    this.layout(element, this.states[element.disabled ? "disabled" : "normal"]);
-  },
-
-  onclick: function(element, event, x, y) {
-    //;;; console2.log("onclick(" + event.eventPhase + "): " + event.button);
-  },
-
-  ondblclick: function(element, event, x, y) {
-    //;;; console2.log("ondblclick(" + event.eventPhase + "): " + event.button);
   },
 
   onmousedown: function(element, event, x, y) {
-    //;;; console2.log("onmousedown(" + event.eventPhase + "): " + event.button);
-    Chrome._active = element;
+    control._active = element;
 
     if (!this.isEditable(element)) return;
 
-    Chrome._activeThumb = this.hitTest(element, x, y);
-    if (Chrome._activeThumb) {
-      this.setCapture(element);
+    control._activeThumb = this.hitTest(element, x, y);
+    if (control._activeThumb) {
+      this.captureMouse(element);
     }
     this.layout(element);
   },
 
   onmouseup: function(element, event) {
-    //;;; console2.log("onmouseup(" + event.eventPhase + "): " + event.button);
-    delete Chrome._active;
-    if (Chrome._activeThumb) {
-      delete Chrome._activeThumb;
+    delete control._active;
+    if (control._activeThumb) {
+      delete control._activeThumb;
       this.layout(element);
     }
-    this.releaseCapture(element);
+    this.releaseMouse();
   },
 
   onmousemove: function(element, event, x, y) {
-    //;;; console2.log("onmousemove: "+[x,y]);
     var thumb = this.hitTest(element, x, y);
-    if (thumb != Chrome._hoverThumb) {
-      Chrome._hoverThumb = thumb;
+    if (thumb != control._hoverThumb) {
+      control._hoverThumb = thumb;
       this.layout(element);
     }
   },
 
   onmouseover: function(element, event, x, y) {
-    Chrome._hover = element;
-    Chrome._hoverThumb = this.hitTest(element, x, y);
+    control._hover = element;
+    control._hoverThumb = this.hitTest(element, x, y);
     this.layout(element);
   },
 
   onmouseout: function(element) {
-    //;;; console2.log("onmouseout");
-    delete Chrome._activeThumb;
-    delete Chrome._hoverThumb;
-    delete Chrome._hover;
+    delete control._activeThumb;
+    delete control._hoverThumb;
+    delete control._hover;
     this.layout(element);
   },
 
   onfocus: function(element) {
-    Chrome._focus = element;
+    control._focus = element;
     this.layout(element);
   },
 
   onblur: function(element) {
-    delete Chrome._focus;
+    delete control._focus;
     this.removeClass(element, this.appearance + _FOCUS);
     this.layout(element);
+    if (control.tooltip) {
+      control.tooltip.hide();
+    }
+  },
+  
+  // methods
+
+  getValue: function(element) {
+    return element.value;
+  },
+
+  setValue: function(element, value) {
+    if (value != element.value) {
+      element.value = value;
+      this.dispatchEvent(element, "change");
+      this.layout(element);
+    }
   },
 
   isActive: function(element) {
-    return Chrome._activeThumb && (Chrome._activeThumb == Chrome._hoverThumb);
+    return control._activeThumb && (control._activeThumb == control._hoverThumb);
   },
 
   isEditable: function(element) {
@@ -465,11 +899,15 @@ var Chrome = Behavior.modify({
   isNativeControl: False,
 
   getCursor: function(element) {
-    return (Chrome._activeThumb || Chrome._hoverThumb || element != Chrome._hover) ? "default" : "";
+    return (control._activeThumb || control._hoverThumb || element != control._hover) ? "default" : "";
   },
 
   syncCursor: function(element) {
-    element.style.cursor = this.getCursor(element);
+    var cursor = this.getCursor(element),
+        style = element.style;
+    if (style.cursor != cursor) {
+      style.cursor = cursor;
+    }
   },
 
   getState: K(0),
@@ -477,33 +915,42 @@ var Chrome = Behavior.modify({
   hitTest: function(element, x) {
     //var rtl = element.currentStyle.direction == "rtl";
     var rtl = false;
-    return rtl ? x <= this.imageWidth : x >= element[_WIDTH] - this.imageWidth;
+    return rtl ? x <= this.IMAGE_WIDTH : x >= element[_WIDTH] - this.IMAGE_WIDTH;
   },
 
   setOrientation: function(element, orientation) {
     if (orientation == this.VERTICAL) {
-      _vertical[element.base2ID] = true;
-      this.setCSSProperty(element, "background-image", "url(" + chrome.host + chrome.theme + "/" + this.appearance + "-vertical.png)", true);
-    } else {
-      delete _vertical[element.base2ID];
+      var backgroundImage = "background-image";
+      this.setStyle(element, backgroundImage, this.getComputedStyle(element, backgroundImage).replace(/\.png/, "-vertical.png"), true);
+    } else if (element.style.backgroundImage) {
       element.style.backgroundImage = "";
     }
   },
 
+  showToolTip: function(element, text) {
+    var tooltip = control.tooltip;
+    if (!tooltip) {
+      tooltip = control.tooltip = new ToolTip;
+    }
+    setTimeout(function() {
+      tooltip.show(element, text);
+    }, 1);
+  },
+
   hasTimer: function(element, id) {
-    id = element.base2ID + (id || _TIMER);
+    id = element.uniqueID + (id || _TIMER);
     return !!_timers[id];
   },
 
   startTimer: function(element, id, interval) {
-    id = element.base2ID + (id || _TIMER);
+    id = element.uniqueID + (id || _TIMER);
     if (!_timers[id]) {
       _timers[id] = this.setInterval(this.tick, 100, element);
     }
   },
 
   stopTimer: function(element, id) {
-    id = element.base2ID + (id || _TIMER);
+    id = element.uniqueID + (id || _TIMER);
     if (_timers[id]) {
       clearInterval(_timers[id]);
       delete _timers[id];
@@ -514,152 +961,236 @@ var Chrome = Behavior.modify({
 
   layout: function(element, state) {
     if (state == null) state = this.getState(element);
-    var clientWidth = element[_WIDTH],
-        clientHeight = element[_HEIGHT];
-    var top = - this.states.length * (clientHeight / 2 * (clientHeight - 1));
+    var clientHeight = element[_HEIGHT],
+        top = - this.states.length * (clientHeight / 2 * (clientHeight - 1)),
+        style = element.style;
     top -= clientHeight * state;
-    element.style.backgroundPosition = (clientWidth - this.imageWidth) + PX + " " + top + PX;
+    var backgroundPosition = "right " + top + PX;
+    if (style.backgroundPosition != backgroundPosition) {
+      style.backgroundPosition = backgroundPosition;
+    }
     this.syncCursor(element);
+  },
+
+  "@Opera": {
+    syncCursor: Undefined
   }
 });
 
 // =========================================================================
-// chrome/ComboBox.js
+// chrome/dropdown.js
 // =========================================================================
 
-var ComboBox = Chrome.modify({
-  appearance: "menulist",
+var dropdown = control.extend({
+  extend: function(_interface) {
+    var dropdown = this.base(_interface);
+    if (!PopupWindow.ancestorOf(dropdown.Popup)) {
+      dropdown.Popup = this.Popup.extend(dropdown.Popup);
+    }
+    return dropdown;
+  },
+
+  "@MSIE.+win": _MSIEShim,
   
-  onmousedown: function(element, event, x) {
-    base(this, arguments);
-    if (this.isEditable(element)) {
-      if (!Chrome._popup) {
-        Chrome._popup = this.createPopup();
-      }
-      if (Chrome._popup) {
-        if (this.hitTest(element, x)) {
-          if (Chrome._popup.isOpen) {
-            Chrome._popup.hide();
-          } else {
-            Chrome._popup.show(element);
-          }
-        }
+  // properties
+
+  appearance: "dropdown",
+
+  Popup: PopupWindow, // popup class
+  
+  // events
+
+  onblur: function(element, event) {
+    if (this.isOpen(element) && !this.popup.isActive()) this.hidePopup();
+    this.base(element, event);
+  },
+  
+  "@Opera(8|9.[0-4])": {
+    onblur: function(element, event) {
+      if (this.isOpen(element) && this.popup.isActive()) {
+        event.preventDefault();
+      } else {
+        this.base(element, event);
       }
     }
   },
 
   onkeydown: function(element, event, keyCode) {
-    // up/down-arrows
     if (this.isEditable(element)) {
-      var UP_DOWN = keyCode == 38 || keyCode == 40;
-      if (!Chrome._popup && UP_DOWN) {
-        Chrome._popup = this.createPopup();
-      }
-      if (Chrome._popup) {
-        if (keyCode == 27) {  // escape
-          Chrome._popup.hide();
-        } else if (UP_DOWN && !Chrome._popup.isOpen) {
-          Chrome._popup.show(element);
-          event.preventDefault();
-        } else if (Chrome._popup.isOpen) {
-          Chrome._popup.onkeydown();
-          event.preventDefault();
-        }
-        return;
+      if (keyCode == 40 && !this.isOpen(element)) {
+        this.showPopup(element);
+      } else if (this.isOpen(element)) {
+        this.popup.onkeydown(event);
       }
     }
   },
 
-  onkeyup: function(element) {
-    if (this.isActive(element)) Chrome._popup.onkeyup();
-  },
-  
-  "@MSIE": {
-    onfocus: function(element) {
-      base(this, arguments);
-      element.attachEvent("onpropertychange", change);
-      element.attachEvent("onblur", function() {
-        element.detachEvent("onpropertychange", change);
-        element.detachEvent("onblur", arguments.callee);
-      });
-      function change(event) {
-        if (event.propertyName == "value") {
-          element.scrollLeft = 9999;
+  onmousedown: function(element, event, x) {
+    this.base.apply(this, arguments);
+    if (this.isEditable(element)) {
+      if (this.hitTest(element, x)) {
+        if (this.isOpen(element)) {
+          this.hidePopup();
+        } else {
+          this.showPopup(element);
         }
-      };
+      } else {
+        this.hidePopup();
+      }
     }
-  },
-  
-  "@Safari.+theme=aqua": {
-    layout: function(element) {
-      this.syncCursor(element);
-    }
-  },
-  
-  createPopup: function() {
-    return new Popup(this);
   },
 
-  isActive: function(element) {
-    return Chrome._popup && Chrome._popup.isOpen;
-  },
+  // methods
 
   getState: function(element) {
     if (element.disabled) {
       var state = "disabled";
     } else if (element.readOnly) {
       state = "normal";
-    } else if (element == Chrome._active && Chrome._activeThumb) {
+    } else if (element == control._active && control._activeThumb) {
       state = "active";
-    } else if (element == Chrome._hover && Chrome._hoverThumb) {
+    } else if (element == control._hover && control._hoverThumb) {
       state = "hover";
     } else {
       state = "normal";
     }
     return this.states[state];
+  },
+
+  hidePopup: function(element) {
+    if (this.popup) this.popup.hide();
+  },
+
+  isOpen: function(element) {
+    var popup = this.popup;
+    return popup && popup.isOpen() && popup.element == element;
+  },
+
+  showPopup: function(element) {
+    if (!this.popup) this.popup = new this.Popup(this);
+    this.popup.show(element);
+  },
+
+  "@theme=aqua": {
+    "@borderImage": {
+      hitTest: function(element, x) {
+        return x >= element.clientWidth;
+      }
+    },
+
+    layout: function(element) {
+      this.syncCursor(element);
+    }
   }
 });
 
 // =========================================================================
-// chrome/Range.js
+// chrome/combobox.js
+// =========================================================================
+
+var combobox = dropdown.extend({
+  // properties
+
+  appearance: "combobox",
+  list: "",
+  
+  // methods
+
+  get: function(element, propertyName) {
+    var value = this.base(element, propertyName);
+    if (value && propertyName == "list" && typeof value == "string") {
+      return this.querySelector("#" + value);
+    }
+    return null;
+  },
+
+  "@Opera[91]": {
+    isNativeControl: function(element) {
+      return element.nodeName == "INPUT" && element.list;
+    }
+  },
+
+  Popup: MenuList
+});
+
+// =========================================================================
+// chrome/number.js
 // =========================================================================
 
 // For numeric controls
 
-var Range = Chrome.modify({
+var number = {
+  // properties
+  
   min:  "",
   max:  "",
   step: 1,
+  value: 0,
+  stepScale: 1,
 
-/*MASK: /-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?/,*/
-
-  onattach: function(element) {
-    var properties = this.getProperties(element);
-    // the following only applies to Slider/ProgressBar but we'll leave it here
-    var value = element.value, min = properties.min;
-    if (!value || isNaN(value)) value = min;
-    //else if (_numberAttributes.step != 1) this.setValue(element, value);
-    _values[element.base2ID] = (value - min) / (properties.max - min);
-    element.onscroll = _resetScroll;
+  "@Opera": {
+    get: function(element, propertyName) {
+      var value = this.base(element, propertyName);
+      switch (propertyName) {
+        case "min":
+        case "max":
+        case "step":
+          if (value === "") return this[propertyName];
+      }
+      return value;
+    }
   },
 
+  // events
+
   onmousewheel: function(element, event, delta) {
-    if (this.isEditable(element) && Chrome._focus == element) {
-      this.increment(element, -parseInt(delta / 40));
+    if (this.isEditable(element) && control._focus == element && element.value != "") {
+      this.increment(element, parseInt(delta / 120));
       event.preventDefault();
     }
   },
 
+  // methods
+
+  convertValueToNumber: parseFloat,
+  convertNumberToValue: String,
+
+  getValueAsNumber: function(element) {
+    return this.convertValueToNumber(element.value);
+  },
+
+  setValueAsNumber: function(element, value) {
+    if (isNaN(value)) value = this.value;
+    var properties = this.getProperties(element),
+        min = this.convertValueToNumber(properties.min),
+        max = this.convertValueToNumber(properties.max),
+        step = parseFloat(properties.step) || 1,
+        scale = step * this.stepScale;
+    // check min/max
+    value = value > max ? max : value < min ? min : value;
+    value = Math.round(value / scale) * scale;
+    if (scale < 1) value = value.toFixed(String(step).replace(/^.*\.|^\d+$/, "").length);
+    // round to step
+    this.setValue(element, this.convertNumberToValue(value));
+  },
+
+  getValueAsDate: function(element) {
+    var number = this.convertValueToNumber(element.value);
+    return isNaN(number) ? null : new Date(number);
+  },
+
+  setValueAsDate: function(element, date) {
+    this.setValueAsNumber(element, date.valueOf());
+  },
+
   getProperties: function(element) {
-    // initialise min/max/step
-    var properties = {min: this.min, max: this.max, step: this.step};
-    for (var attr in properties) {
-      var value = element[attr];
-      if (value == null && element.hasAttribute && element.hasAttribute(attr)) {
-        value = element.getAttribute(attr);
-      }
-      if (value && !isNaN(value)) {
-        properties[attr] = value;
+    if (element == number._element) {
+      var properties = number._properties;
+    } else {
+      number._element = element;
+      properties = number._properties = {min: 0, max: 0, step: 0};
+      for (var attr in properties) {
+        properties[attr] = this.get(element, attr);
       }
     }
     return properties;
@@ -668,7 +1199,7 @@ var Range = Chrome.modify({
   increment: function(element, amount, block) {
     var type = block ? "Block" : "Unit";
     amount *= this["get" + type + "Increment"](element);
-    this.setValue(element, this.getValue(element) + amount);
+    this.setValueAsNumber(element, this.getValueAsNumber(element) + amount);
   },
 
   getBlockIncrement: function(element) {
@@ -676,66 +1207,51 @@ var Range = Chrome.modify({
   },
 
   getUnitIncrement: function(element) {
-    return this.getProperty(element, "step") || 1;
-  },
-
-  getValue: function(element) {
-    return parseFloat(element.value);
-  },
-
-  setValue: function(element, value) {
-    var properties = this.getProperties(element);
-    if (isNaN(value)) value = 0;
-    var min = parseFloat(properties.min), max = parseFloat(properties.max), step = parseFloat(properties.step) || 1;
-    // check min/max
-    value = value > max ? max : value < min ? min : value;
-    // round to step
-    value = Math.round(value / step) * step;
-    value = value.toFixed(String(step).replace(/^.*\.|^\d+$/, "").length);
-    if (value != element.value) {
-      element.value = value;
-      this.dispatchEvent(element, "change");
-    }
+    return (this.get(element, "step") || 1) * this.stepScale;
   }
-});
+};
 
 // =========================================================================
-// chrome/ProgressBar.js
+// chrome/range.js
 // =========================================================================
 
-// The progress bar uses a value between 0 and 1 and it is up to the consumer to
-// map this to a valid value range
-
-// TODO: Right to left should invert horizontal
-
-var ProgressBar = Range.modify({
-  HEIGHT: 3000,
-  WIDTH: 3000,
-  CHUNK_WIDTH: 10,
-  CHUNK_HEIGHT: 10,
+var range = control.extend({
+  implements: [number],
+  
+  // properties
   
   min:  0,
   max:  100,
-  step: 1,
+  allowVertical: true,
 
-  appearance: "progressbar",
+  // events
+
+  onminchange: _layout,
+  onmaxchange: _layout,
+  onstepchange: _layout,
+  onvaluechange: _layout,
+
+  "@!Opera(8|9.[0-4])": {
+    // The text is hidden for all but Opera < 9.5.
+    // So disallow the default number behavior.
+    onchange: null
+  },
+
+  "@MSIE": _preventScroll,
 
   "@!theme=aqua": {
     onfocus: function(element) {
-      if (element != Chrome._active) {
+      if (element != control._active) {
         this.addClass(element, this.appearance + _FOCUS);
       }
       this.base(element);
     }
   },
-  
+
   onkeydown: function(element, event, keyCode) {
-    //;;; console2.log("onkeydown: "+keyCode);
-    if (!this.isEditable(element)) return;
+    if (!this.isEditable(element) || keyCode < 33 || keyCode > 40) return;
 
-    //event.preventDefault();
-
-    if (keyCode < 33 || keyCode > 40) return;
+    event.preventDefault();
 
     var amount = 1;
 
@@ -743,7 +1259,7 @@ var ProgressBar = Range.modify({
       case 35: // end
         var value = 1;
       case 36: // home
-        this.setValue(element, value || 0);
+        this.setRelativeValue(element, value || 0);
         return;
       case 33: // page up
         var block = true;
@@ -757,7 +1273,28 @@ var ProgressBar = Range.modify({
     this.increment(element, amount, block);
   },
 
-  hitTest: False,
+  // methods
+
+  getProperties: function(element) {
+    var properties = this.base(element);
+    properties.relativeValue = ((properties.value = parseFloat(element.value) || 0) - properties.min) / (properties.max - properties.min);
+    return properties;
+  },
+
+  getRelativeValue: function(element) {
+    return this.getProperties(element).relativeValue;
+  },
+
+  setRelativeValue: function(element, relativeValue) {
+    var properties = this.getProperties(element);
+    this.setValueAsNumber(element, (properties.max - properties.min) * relativeValue);
+  },
+
+  increment: function(element, amount, block) {
+    var type = block ? "Block" : "Unit";
+    amount *= this["get" + type + "Increment"](element);
+    this.setRelativeValue(element, this.getRelativeValue(element) + amount);
+  },
 
   getBlockIncrement: function(element) {
     // try to get as close as possible to 10% while still being a multiple
@@ -772,46 +1309,66 @@ var ProgressBar = Range.modify({
     return properties.step / (properties.max - properties.min) || this.base(element);
   },
 
-  layout: function(element) {
-    var clientWidth = element[_WIDTH],
-        clientHeight = element[_HEIGHT],
-        base2ID = element.base2ID;
+  getCursor: K("")
+});
 
-    if (_vertical[base2ID]) {
+// =========================================================================
+// chrome/progressbar.js
+// =========================================================================
+
+var progressbar = range.extend({
+  // constants
+  
+  HEIGHT: 3000,
+  WIDTH: 3000,
+  CHUNK_WIDTH: 1,
+  CHUNK_HEIGHT: 1,
+  
+  "@theme=luna": {
+    CHUNK_WIDTH: 10,
+    CHUNK_HEIGHT: 10
+  },
+
+  // properties
+
+  appearance: "progressbar",
+
+  // events
+
+  onmouseover: null,
+  onmousemove: null,
+  onmouseout: null,
+
+  // methods
+
+  hitTest: False,
+
+  layout: function(element) {
+    var clientWidth = element[_WIDTH] - 2,
+        clientHeight = element[_HEIGHT] - 2,
+        relativeValue = this.getProperties(element).relativeValue;
+
+    if (clientHeight > clientWidth) {
       var left = (-clientWidth / 2) * (clientWidth + 3) - 2;
-      //var left = (-clientWidth / 2) * (clientWidth - 1);
-      var top = Math.floor(clientHeight * _values[base2ID]);
+      var top = Math.floor(clientHeight * relativeValue);
       top = clientHeight - Math.round(top / this.CHUNK_HEIGHT) * this.CHUNK_HEIGHT;
     } else {
-      var chunk = /luna/.test(chrome.theme) ? this.CHUNK_WIDTH : 1;
-      left = Math.floor(clientWidth * _values[base2ID]) - this.WIDTH;
-      left = Math.round(++left / chunk) * chunk;
+      left = Math.floor(clientWidth * relativeValue) - this.WIDTH;
+      left = Math.round(left / this.CHUNK_WIDTH) * this.CHUNK_WIDTH;
       top = (-clientHeight / 2) * (clientHeight + 3) - 2;
-      //top = (-clientHeight / 2) * (clientHeight - 1);
     }
-    element.style.backgroundPosition = left + PX + " " + top + PX;
-  },
-
-  getCursor: K(""),
-
-  getValue: function(element) {
-    return _values[element.base2ID];
-  },
-
-  setValue: function(element, value) {
-    var properties = this.getProperties(element);
-    var min = Number(properties.min), max = Number(properties.max);
-    this.base(element, min + (max - min) * value);
-    _values[element.base2ID] = (element.value - min) / (max - min);
-    this.layout(element);
+    
+    element.style.backgroundPosition = ++left + PX + " " + ++top + PX;
   }
 });
 
 // =========================================================================
-// chrome/Slider.js
+// chrome/slider.js
 // =========================================================================
 
-var Slider = ProgressBar.modify({
+var slider = range.extend({
+  // constants
+  
   HORIZONTAL_WIDTH: 3000,
   HORIZONTAL_HEIGHT: 21,
   VERTICAL_WIDTH: 22,
@@ -819,87 +1376,102 @@ var Slider = ProgressBar.modify({
   THUMB_WIDTH: 11,
   THUMB_HEIGHT: 11,
 
+  // properties
+
   appearance: "slider",
 
+  // events
+
   onmousedown: function(element, event, x, y, screenX, screenY) {
-    base(this, arguments);
+    this.base.apply(this, arguments);
+    
+    if (element.disabled) return;
+    
+    element.focus();
     event.preventDefault();
-    if (!this.isEditable(element)) return;
-    if (Chrome._activeThumb) {
+    
+    if (element.readOnly) return;
+
+    // This is the behavior for Windows and Linux
+    
+    if (control._activeThumb) {
       var thumb = this.getThumbRect(element);
-      Chrome._dragInfo = {
+      slider._dragInfo = {
         dx: screenX - thumb.left,
         dy: screenY - thumb.top
       };
-      Chrome._firedOnce = true;
+      slider._firedOnce = true;
     } else {
       this.startTimer(element);
-      Chrome._eventX = x;
-      Chrome._eventY = y;
+      slider._value = this.getValueByPosition(element, x - this.THUMB_WIDTH / 2, y - this.THUMB_HEIGHT / 2);
+      slider._direction = slider._value < this.getValue(element) ? -1 : 1;
     }
-    element.focus();
   },
 
   onmouseup: function(element, event) {
     this.base(element, event);
-    delete Chrome._dragInfo;
-    if (!Chrome._firedOnce) this.tick(element);
+    if (!this.isEditable(element)) return;
+    delete slider._dragInfo;
+    if (!slider._firedOnce) this.tick(element);
     this.stopTimer(element);
-    delete Chrome._eventX;
-    delete Chrome._eventY;
-    delete Chrome._increasing;
-    delete Chrome._firedOnce;
+    delete slider._value;
+    delete slider._direction;
+    delete slider._firedOnce;
   },
 
   onmousemove: function(element, event, x, y, screenX, screenY) {
-    if (Chrome._dragInfo) {
-      var clientWidth = element[_WIDTH];
-      var clientHeight = element[_HEIGHT];
-      if (clientWidth >= clientHeight) {
-        var size = clientWidth - this.THUMB_WIDTH;
-        var pos = screenX - Chrome._dragInfo.dx;
-      } else {
-        size = clientHeight - this.THUMB_HEIGHT;
-        pos = size - screenY + Chrome._dragInfo.dy;
-      }
-      this.setValue(element, pos / size);
+    if (slider._dragInfo) {
+      this.setValueByPosition(element, screenX - slider._dragInfo.dx, screenY - slider._dragInfo.dy);
     } else {
-      base(this, arguments);
+      this.base.apply(this, arguments);
     }
   },
 
+  "@Opera(8|9.[0-4])": {
+    onmousemove: function(element) {
+      if (slider._dragInfo) {
+        getSelection().collapse(element.ownerDocument.body, 0); // prevent text selection
+      }
+      this.base.apply(this, arguments);
+    }
+  },
+
+  // methods
+
   layout: function(element, state) {
-    // TODO: Right to left should invert horizontal
     if (state == null) state = this.getState(element);
     
-    var thumb = this.getThumbRect(element);
+    var thumb = this.getThumbRect(element),
+        style = element.style;
 
-    if (_vertical[element.base2ID]) {
-      var left = thumb.left;
-      var top = thumb.top - Math.ceil((this.VERTICAL_HEIGHT - this.THUMB_HEIGHT) / 2) - state * this.VERTICAL_HEIGHT;
+    if (element[_HEIGHT] > element[_WIDTH]) {
+      var left = thumb.left,
+          top = thumb.top - Math.ceil((this.VERTICAL_HEIGHT - this.THUMB_HEIGHT) / 2) - state * this.VERTICAL_HEIGHT;
     } else {
       left = thumb.left - Math.ceil((this.HORIZONTAL_WIDTH - this.THUMB_WIDTH) / 2) - state * this.HORIZONTAL_WIDTH;
       top = thumb.top;
     }
-    element.style.backgroundPosition = left + PX + " " + top + PX;
-    //;;;console2.log("layout: "+element.style.backgroundPosition);
+    
+    var backgroundPosition = left + PX + " " + top + PX;
+    if (style.backgroundPosition != backgroundPosition) {
+      style.backgroundPosition = backgroundPosition;
+    }
   },
 
   getThumbRect: function(element) {
     var clientWidth = element[_WIDTH],
         clientHeight = element[_HEIGHT],
-        value = _values[element.base2ID];
-        
-    if (_vertical[element.base2ID]) {
+        relativeValue = this.getProperties(element).relativeValue;
+    if (clientHeight > clientWidth) {
       return new Rect(
         (clientWidth - this.VERTICAL_WIDTH) / 2,
-        (clientHeight -= this.THUMB_HEIGHT) - Math.floor(clientHeight * value),
+        (clientHeight -= this.THUMB_HEIGHT) - Math.floor(clientHeight * relativeValue),
         this.VERTICAL_WIDTH,
         this.THUMB_HEIGHT
       );
     } else {
       return new Rect(
-        Math.floor((clientWidth - this.THUMB_WIDTH) * value),
+        Math.floor((clientWidth - this.THUMB_WIDTH) * relativeValue),
         Math.floor((clientHeight - this.HORIZONTAL_HEIGHT) / 2),
         this.THUMB_WIDTH,
         this.HORIZONTAL_HEIGHT
@@ -912,12 +1484,30 @@ var Slider = ProgressBar.modify({
     return this.getThumbRect(element).contains(x, y);
   },
 
+  getValueByPosition: function(element, x, y) {
+    var clientWidth = element[_WIDTH],
+        clientHeight = element[_HEIGHT],
+        properties = this.getProperties(element);
+    if (clientWidth >= clientHeight) {
+      var size = clientWidth - this.THUMB_WIDTH;
+      var pos = x;
+    } else {
+      size = clientHeight - this.THUMB_HEIGHT;
+      pos = size - y;
+    }
+    return (properties.max - properties.min) * (pos / size);
+  },
+
+  setValueByPosition: function(element, x, y) {
+    this.setValueAsNumber(element, this.getValueByPosition(element, x, y));
+  },
+
   getState: function(element) {
     if (element.disabled) {
       var state = "disabled";
-    } else if (element == Chrome._active && Chrome._activeThumb) {
+    } else if (element == control._active && control._activeThumb) {
       state = "active";
-    } else if (element == Chrome._focus || (element == Chrome._hover && Chrome._hoverThumb)) {
+    } else if (element == control._focus || (element == control._hover && control._hoverThumb)) {
       state = "hover";
     } else {
       state = "normal";
@@ -926,55 +1516,49 @@ var Slider = ProgressBar.modify({
   },
 
   tick: function(element) {
-    var thumb = this.getThumbRect(element);
-    if (_vertical[element.base2ID]) {
-      var my = Chrome._eventY;
-      if (my < thumb.top && false != Chrome._increasing) {
-        this.increment(element, 1, true);
-        Chrome._increasing = true;
-      } else if (my > thumb.top + this.THUMB_HEIGHT && true != Chrome._increasing) {
-        this.increment(element, -1, true);
-        Chrome._increasing = false;
-      }
+    var properties = this.getProperties(element);
+    var amount = this.getBlockIncrement(element) * (properties.max - properties.min);
+    if (Math.abs(slider._value - this.getValue(element)) < amount) {
+      this.setValueAsNumber(element, slider._value);
+      this.stopTimer(element);
     } else {
-      var mx = Chrome._eventX;
-      // _increasing is true, false or null
-      if (mx < thumb.left && true != Chrome._increasing) {
-        this.increment(element, -1, true);
-        Chrome._increasing = false;
-      } else if (mx > thumb.left + this.THUMB_WIDTH && false != Chrome._increasing) {
-        this.increment(element, 1, true);
-        Chrome._increasing = true;
-      }
+      this.increment(element, slider._direction, true);
     }
-    Chrome._firedOnce = true;
+    slider._firedOnce = true;
   },
 
-  "@KHTML|opera[91]": {
+  "@KHTML|Opera[91]": {
     isNativeControl: function(element) {
       return element.nodeName == "INPUT" && element.type == "range";
     }
   },
 
   "@theme=aqua": {
-    onblur: function(element) {
-      if (element == Slider._activeElement) {
-        delete Slider._activeElement;
+    onblur: function(element, event) {
+      if (element == slider._activeElement) {
+        delete slider._activeElement;
       }
-      base(this, arguments);
+      this.base(element, event);
     },
+    
+    // the aqua slider jumps immediatley to wherever you click
 
-    onmousedown: function(element) {
-      Slider._activeElement = element;
-      base(this, arguments);
+    onmousedown: function(element, event, x, y) {
+      slider._activeElement = element;
+      this.base.apply(this, arguments);
+      if (!this.isEditable(element)) return;
+      if (!control._activeThumb) {
+        this.setValueByPosition(element, x - this.THUMB_WIDTH / 2, y - this.THUMB_HEIGHT / 2);
+      }
+      this.base.apply(this, arguments); // why am I doing this twice?
     },
 
     getState: function(element) {
       if (element.disabled) {
         var state = "disabled";
-      } else if (element == Chrome._active && Chrome._activeThumb) {
+      } else if (element == control._active && control._activeThumb) {
         state = "active";
-      } else if (element == Chrome._focus && element != Slider._activeElement) {
+      } else if (element == control._focus && element != slider._activeElement) {
         state = "hover";
       } else {
         state = "normal";
@@ -982,18 +1566,20 @@ var Slider = ProgressBar.modify({
       return this.states[state];
     },
 
-    startTimer: function(element) {
-      // the aqua slider jumps immediatley to wherever you click
-    }
+    startTimer: Undefined
   }
 });
 
 // =========================================================================
-// chrome/Spinner.js
+// chrome/spinner.js
 // =========================================================================
 
-var Spinner = Range.modify({
-  appearance: "spinner",
+var spinner = control.extend({
+  implements: [number],
+
+  "@MSIE.+win": _MSIEShim,
+
+  // constants
 
   states: {
     normal:      0,
@@ -1004,21 +1590,21 @@ var Spinner = Range.modify({
     disabled:    5,
     length:      6
   },
+
+  // properties
+  
+  appearance: "spinner",
+
+  // events
   
   onkeydown: function(element, event, keyCode) {
-    //;;; console2.log("onkeydown(" + event.eventPhase + "): " + keyCode);
     if (!this.isEditable(element)) return;
-    if (!/^(3[34568]|40)$/.test(keyCode)) return;
+    
+    if (!/^(3[348]|40)$/.test(keyCode)) return; // valid key codes
 
     event.preventDefault();
 
     switch (keyCode) {
-      case 35: // end
-        if (element.max) this.setValue(element, element.max);
-        return;
-      case 36: // home
-        if (element.min) this.setValue(element, element.min);
-        return;
       case 34: // page-down
         var block = true;
         break;
@@ -1031,25 +1617,18 @@ var Spinner = Range.modify({
   },
 
   onkeyup: function(element, event, keyCode) {
-    //;;; console2.log("onkeyup(" + event.eventPhase + "): " + keyCode);
     if (!this.isEditable(element)) return;
+    
+    if (!/^(3[348]|40)$/.test(keyCode)) return; // valid key codes
     
     this.stopTimer(element);
 
-    switch (keyCode) {
-      case 33: // page-up
-      case 34: // page-down
-      case 38: // up-arrow
-      case 40: // down-arrow
-        event.preventDefault(); // is this required?
-        this.deactivate(element);
-        break;
-    }
+    this.deactivate(element);
   },
 
   onmousedown: function(element) {
-    base(this, arguments);
-    if (Chrome._activeThumb) {
+    this.base.apply(this, arguments);
+    if (control._activeThumb) {
       this.startTimer(element);
     }
   },
@@ -1060,24 +1639,20 @@ var Spinner = Range.modify({
     this.base(element, event);
   },
 
-  "@opera[91]": {
-    isNativeControl: function(element) {
-      return element.nodeName == "INPUT" && element.type == "number";
-    }
-  },
+  // methods
 
   activate: function(element, direction, block) {
-    Chrome._activeThumb = Chrome._hoverThumb = direction;
+    control._activeThumb = control._hoverThumb = direction;
     this.layout(element);
-    Chrome._block = block;
+    spinner._block = block;
     this.startTimer(element, _ACTIVE);
   },
 
   deactivate: function(element) {
     this.stopTimer(element, _ACTIVE);
-    delete Chrome._activeThumb;
-    delete Chrome._hoverThumb;
-    delete Chrome._block;
+    delete control._activeThumb;
+    delete control._hoverThumb;
+    delete spinner._block;
     this.layout(element);
   },
 
@@ -1086,10 +1661,10 @@ var Spinner = Range.modify({
       var state = "disabled";
     } else if (element.readOnly) {
       state = "normal";
-    } else if ((element == Chrome._hover || element == Chrome._focus) && Chrome._activeThumb) {
-      state = Chrome._activeThumb + _ACTIVE;
-    } else if (element == Chrome._hover && Chrome._hoverThumb) {
-      state = Chrome._hoverThumb + _HOVER;
+    } else if ((element == control._hover || element == control._focus) && control._activeThumb) {
+      state = control._activeThumb + _ACTIVE;
+    } else if (element == control._hover && control._hoverThumb) {
+      state = control._hoverThumb + _HOVER;
     } else {
       state = "normal";
     }
@@ -1102,94 +1677,508 @@ var Spinner = Range.modify({
   },
 
   startTimer: function(element) {
-    if (!_timers[element.base2ID + _TIMER]) {
-      Chrome._direction = (Chrome._activeThumb == "up") ? 1 : -1;
-      Chrome._steps = 1;
+    if (!_timers[element.uniqueID + _TIMER]) {
+      spinner._direction = (control._activeThumb == "up") ? 1 : -1;
+      spinner._steps = 1;
       this.base(element);
     }
   },
 
   stopTimer: function(element) {
-    if (_timers[element.base2ID + _TIMER]) {
+    if (_timers[element.uniqueID + _TIMER]) {
       this.base(element);
-      if (!Chrome._firedOnce) this.increment(element);
-      delete Chrome._firedOnce;
-      try {
-        element.select();
-      } catch (ex) {}
+      if (!spinner._firedOnce) this.tick(element);
+      delete spinner._firedOnce;
+      element.select();
     }
   },
 
   tick: function(element) {
-    this.increment(element);
-    Chrome._steps *= 1.1; // accelerate
+    this.increment(element, Math.floor(spinner._steps * spinner._direction), spinner._block);
+    spinner._steps *= 1.05; // accelerate
+    spinner._firedOnce = true;
   },
 
   increment: function(element, amount, block) {
-    if (amount == undefined) {
-      amount = parseInt(Chrome._steps * Chrome._direction);
-      block = !!Chrome._block;
-    }
     this.base(element, amount, block);
-    Chrome._firedOnce = true;
+  },
+
+  "@Opera[91]": {
+    isNativeControl: function(element) {
+      return element.nodeName == "INPUT" && element.type == "number";
+    }
+  }
+});
+
+
+// =========================================================================
+// chrome/timepicker.js
+// =========================================================================
+
+var timepicker = spinner.extend({
+  appearance: "timepicker",
+  step: 60,
+  stepScale: 1000,
+
+  // events
+
+  onchange: _date_onchange,
+
+  /*"@(Date.prototype.toLocaleTimeString)": {
+    onchange: function(element) {
+      this.base(element);
+      if (!this.hasClass(element, "jsb-error")) {
+        this.showToolTip(element, this.getValueAsDate(element).toLocaleTimeString());
+      }
+    }
+  },*/
+
+  // methods
+
+  getBlockIncrement: function(element) {
+    return this.getUnitIncrement(element) * 60;
+  },
+
+  convertValueToNumber: function(value) {
+    return value == "" ? NaN : Date2.parse("T" + value) + 500;
+  },
+
+  convertNumberToValue: function(number) {
+    if (isNaN(number)) return "";
+    var value = Date2.toISOString(new Date(number)).slice(11).replace(/\.\d{3}Z$/, "");
+    return value.replace(/:00$/, ""); // fix me: this should be dependant on an element's step attribute
   }
 });
 
 // =========================================================================
-// chrome/Popup.js
+// chrome/datepicker.js
 // =========================================================================
 
-var _POPUP_METRICS = "left:%1px!important;top:%2px!important;width:%3px!important;";
+var datepicker = dropdown.extend({
+  implements: [number],
 
-var Popup = Base.extend({
-  constructor: function(owner) {
-    this.owner = owner;
-    var popup = this.popup = document.createElement("div");
-    popup.className = this.appearance;
-    popup.innerHTML = this.html;
-  },
-
-  appearance: "popup",
-  isOpen: false,
-
-  inherit: String2.csv("backgroundColor,color,fontFamily,fontSize,fontWeight,fontStyle"),
-  html: "<div>1 thousand</div><div>2 thousand</div><div>3 thousand</div><div>4 thousand</div><div>5 thousand</div>",
-
-  onkeydown: Undefined,
-  onkeyup: Undefined,
+  appearance: "datepicker",
+  stepScale: 86400000,
   
-  hide: function() {
-    this.popup.parentNode.removeChild(this.popup);
-    //MenuList.detach(popup);
-    this.isOpen = false;
-  },
+  // events
 
-  movesize: function(element) {
-    this.popup.style.cssText = format(_POPUP_METRICS, element.offsetLeft, element.offsetTop + element.offsetHeight, element.offsetWidth - 2);
-    element.offsetParent.appendChild(this.popup);
-  },
-
-  show: function(element) {
-    this.isOpen = true;
-    //MenuList.attach(popup);
-    this.movesize(element);
-    var style = this.popup.style;
-    var computedStyle = Behavior.getComputedStyle(element);
-    forEach (this.inherit, function(propertyName) {
-      style[propertyName] = computedStyle[propertyName];
-    });
-    if (style.backgroundColor == "transparent") {
-      style.backgroundColor = "Window";
+  onchange: _date_onchange,
+  
+  "@(Date.prototype.toLocaleDateString)": {
+    onchange: function(element) {
+      this.base(element);
+      if (!this.hasClass(element, "jsb-error")) {
+        this.showToolTip(element, this.getValueAsDate(element).toLocaleDateString());
+      }
     }
-    style.display = "block";
   },
   
-  "@MSIE": {
-    movesize: function(element) {
-      var scrollParent = document.compatMode != "CSS1Compat" ? document.body: document.documentElement;
-      var rect = element.getBoundingClientRect();
-      this.popup.style.cssText = format(_POPUP_METRICS, scrollParent.scrollLeft + rect.left - 2, scrollParent.scrollTop + rect.bottom - 2, element.offsetWidth - 2);
-      document.body.appendChild(this.popup);
+  // methods
+
+  convertValueToNumber: function(value) {
+    return value == "" ? NaN : Date2.parse(value + "T");
+  },
+  
+  convertNumberToValue: function(number) {
+    return isNaN(number) ? "" : Date2.toISOString(new Date(number)).slice(0, 10);
+  },
+  
+  // properties
+  
+  Popup: {
+    appearance: "datepicker-popup",
+
+    scrollX: false,
+    scrollY: false,
+
+    currentDate: 0,
+  
+    render: function() {
+      this.base(
+'<div style="padding:4px"><table style="margin:0" cellspacing="0">\
+<tr>\
+<td><select>' +
+wrap(chrome.locale.months, "option") +
+'</select></td>\
+<td align="right"><input type="text" class="jsb-spinner" size="4"></td>\
+</tr>\
+<tr>\
+<td colspan="2">\
+<table style="width:100%;margin:2px 0 0 0;padding:2px" class="jsb-datepicker-days" cellspacing="0" tabindex="1">\
+<tr unselectable="on">' + wrap(chrome.locale.days, "th", 'unselectable="on"') + '</tr>' +
+Array(7).join('<tr unselectable="on">' + Array(8).join('<td unselectable="on">0</td>') + '</tr>') +
+'</table>\
+</td>\
+</tr>\
+</table></div>'
+);
+      
+      this.year = this.querySelector("input");
+      this.month = this.querySelector("select");
+      this.days = this.querySelector("table.jsb-datepicker-days");
+      
+      this.controls = new Array2(this.month, this.year, this.days);
+      
+      this.year.onscroll = _resetScroll;
+      spinner.attach(this.year);
+      
+      this.setUnselectable(this.days);
+      
+      this.render = Undefined; // do once
+      
+      function wrap(items, tagName, attributes) {
+        return reduce(items, function(html, text) {
+          return html += "<" + tagName + " " + attributes + ">" + text + "</" + tagName + ">";
+        }, "");
+      };
+    },
+
+    onchange: function(event) {
+      this.fill();
+    },
+
+    onkeydown: function(event) {
+      var keyCode = event.keyCode,
+          target = event.target;
+      
+      if (keyCode == 13) { // enter
+        this.select(this.currentItem);
+        event.preventDefault();
+        return;
+      }
+          
+      if (target != this.year && target != this.month && /^(3[3467809]|40)$/.test(keyCode)) {
+        var startDate = this.getUTCDate(),
+            date = new Date(startDate);
+            
+        event.preventDefault();
+        
+        switch (keyCode) {
+          case 36: // home
+            date = this.owner.getValueAsDate(this.element) || new Date;
+            break;
+          case 37: // left
+            date.setUTCDate(date.getUTCDate() - 1);
+            break;
+          case 39: // right
+            date.setUTCDate(date.getUTCDate() + 1);
+            break;
+          case 38: // up
+            date.setUTCDate(date.getUTCDate() - 7);
+            break;
+          case 40: // down
+            date.setUTCDate(date.getUTCDate() + 7);
+            break;
+          case 34: // page up
+            if (event.ctrlKey) { // increment by year if the ctrl key is down
+              date.setUTCFullYear(date.getUTCFullYear() - 1);
+            } else { // by month
+              date.setUTCDate(date.getUTCDate() - 28);
+              if (date.getUTCMonth() == startDate.getUTCMonth()) {
+                date.setUTCDate(date.getUTCDate() - 7);
+              }
+            }
+            break;
+          case 33: // page down
+            if (event.ctrlKey) {
+              date.setUTCFullYear(date.getUTCFullYear() + 1);
+            } else {
+              date.setUTCDate(date.getUTCDate() + 28);
+              if (date.getUTCMonth() == startDate.getUTCMonth()) {
+                date.setUTCDate(date.getUTCDate() + 7);
+              }
+            }
+            break;
+        }
+        this.currentDate = date.getUTCDate();
+        if (date.getUTCMonth() == startDate.getUTCMonth() && date.getUTCFullYear() == startDate.getUTCFullYear()) {
+          this.highlightByDate();
+        } else {
+          this.year.value = date.getUTCFullYear();
+          this.month.selectedIndex = date.getUTCMonth();
+          this.fill();
+        }
+      } else {
+        this.base(event);
+      }
+    },
+
+    onmouseup: function(event) {
+      var day = event.target;
+      if (!Traversal.contains(this.days, day)) return;
+      if (day.className == "disabled") return;
+      this.select(this.currentItem);
+    },
+
+    onmouseover: function(event) {
+      var target = event.target;
+      if (target.nodeName == "TD" && target.className != "disabled" && Traversal.contains(this.days, target)) {
+        this.highlight(target);
+        this.currentDate = parseInt(target[_TEXT]);
+      }
+    },
+
+    // methods
+
+    getUTCDate: function() {
+      return new Date(Date.UTC(this.year.value, this.month.selectedIndex, this.currentDate, 0));
+    },
+
+    fill: function() {
+      var month = this.month.selectedIndex,
+          d = new Date(this.year.value, month, 1, 12),
+          d2 = new Date(d);
+          
+      d.setUTCDate(d.getUTCDate() - d.getUTCDay() + chrome.locale.firstDay);
+      // ensure that we do not start after the first of the month
+      if (d > d2) {
+        d.setUTCDate(d.getUTCDate() - 7);
+      }
+
+      var rows = this.days.rows, row,
+          currentCell, lastCell;
+      for (var i = 1; row = rows[i]; i++) {
+        var cells = row.cells, cell,
+            hasDays = false;
+        for (var j = 0; cell = cells[j]; j++) {
+          var date = d.getUTCDate(),
+              isSameMonth = month == d.getUTCMonth();
+          cell.innerHTML = date;
+          cell.className = isSameMonth ? "" : "disabled";
+          if (isSameMonth) {
+            lastCell = cell;
+            if (this.currentDate == date) currentCell = cell;
+          }
+          hasDays |= isSameMonth;
+          d.setUTCDate(date + 1);
+        }
+        row.style.visibility = hasDays ? "" : "hidden";
+      }
+      this.highlight(currentCell || lastCell);
+    },
+
+    highlight: function(item) {
+      if (item) {
+        this.reset(this.currentItem);
+        this.currentItem = item;
+        ClassList.add(item, "selected");
+      }
+    },
+
+    highlightByDate: function() {
+      var rows = this.days.rows, row;
+      for (var i = 1; row = rows[i]; i++) {
+        var cells = row.cells, cell;
+        for (var j = 0; cell = cells[j]; j++) {
+          if (cell[_TEXT] == this.currentDate && cell.className != "disabled") {
+            this.highlight(cell);
+            return;
+          }
+        }
+      }
+    },
+
+    layout: function() {
+      var date = this.owner.getValueAsDate(this.element) || new Date;
+      this.year.value = date.getUTCFullYear();
+      this.month.selectedIndex = date.getUTCMonth();
+      this.currentDate = date.getUTCDate();
+      this.fill();
+      spinner.layout(this.year);
+    },
+
+    reset: function(item) {
+      if (item) ClassList.remove(item, "selected");
+    },
+
+    select: function() {
+      var element = this.element;
+      this.owner.setValueAsDate(element, this.getUTCDate());
+      this.hide();
+      element.focus();
+    },
+
+    style: function(element) {
+      this.base(element);
+      var bodyStyle = this.body.style,
+          monthStyle = this.month.style,
+          yearStyle = this.year.style,
+          daysStyle = this.days.style,
+          days = this.body.getElementsByTagName("td");
+      forEach.csv("fontFamily,fontSize,fontWeight,fontStyle,color", function(propertyName) {
+        daysStyle[propertyName] =
+        monthStyle[propertyName] =
+        yearStyle[propertyName] = bodyStyle[propertyName];
+      });
+      daysStyle.backgroundColor =
+      yearStyle.backgroundColor = bodyStyle.backgroundColor;
+      this.highlight(days[14 - days[14][_TEXT] + this.currentDate]);
+    }
+  }
+});
+
+// =========================================================================
+// chrome/weekpicker.js
+// =========================================================================
+
+var weekpicker = datepicker.extend({
+  PATTERN: /^\d{4}-W([0-4]\d|5[0-3])$/,
+
+  appearance: "weekpicker",
+  stepScale: 604800000, // milliseconds in a week
+
+  showToolTip: Undefined,
+
+  convertValueToNumber: function(value) {
+    if (!this.PATTERN.test(value)) return NaN;
+    var parts = String(value).split("-W"),
+        date = new Date(parts[0], 0, 1);
+    while (date.getDay() != chrome.locale.firstDay) date.setDate(date.getDate() + 1);
+    date = new Date(date.valueOf() + (parts[1] - 1) * this.stepScale);
+    return (date.getFullYear() == parts[0]) ? date.valueOf() : NaN;
+  },
+
+  convertNumberToValue: function(number) {
+    var date = new Date(number),
+        jan1 = new Date(date.getFullYear(), 0, 1),
+        week = Math.floor((date - jan1) / this.stepScale) + 1;
+    return pad(date.getFullYear(), 4) + "-W" + pad(week);
+  },
+  
+  Popup: {
+    onkeydown: function(event) {
+      if (!/^(37|39)$/.test(event.keyCode)) { // ignore datepicker behavior for left/right arrows
+        this.base(event);
+      }
+    },
+    
+    onmouseover: function(event) {
+      var target = event.target;
+      if (target.nodeName == "TD" && Traversal.contains(this.days, target)) {
+        this.highlight(target.parentNode);
+        this.currentDate = parseInt(NodeSelector.querySelector(target.parentNode, "td:not(.disabled)")[_TEXT]);
+      }
+    },
+
+    onmouseup: function(event) {
+      if (Traversal.contains(this.days, event.target)) {
+        this.select(this.currentItem);
+      }
+    },
+    
+    highlight: function(item) {
+      if (item.nodeName == "TD") {
+        item = item.parentNode;
+      }
+      this.base(item);
+    }
+  }
+});
+
+// =========================================================================
+// chrome/monthpicker.js
+// =========================================================================
+
+var monthpicker = spinner.extend({
+  appearance: "monthpicker",
+
+  // events
+
+  onchange: _date_onchange,
+
+  // methods
+
+  getBlockIncrement: function(element) {
+    return this.getUnitIncrement(element) * 12;
+  },
+
+  convertValueToNumber: function(value) {
+    return value == "" ? NaN : Date2.parse(value + "-12T");
+  },
+
+  convertNumberToValue: function(number) {
+    return isNaN(number) ? "" : Date2.toISOString(new Date(number)).slice(0, 7);
+  },
+
+  increment: function(element, amount, block) {
+    var date = this.getValueAsDate(element) || new Date;
+    if (block) {
+      date.setUTCFullYear(date.getUTCFullYear() + amount);
+    } else {
+      date.setUTCMonth(date.getUTCMonth() + amount);
+    }
+    this.setValueAsDate(element, date);
+  }
+});
+
+// =========================================================================
+// chrome/colorpicker.js
+// =========================================================================
+
+var colorpicker = dropdown.extend({
+  appearance: "colorpicker",
+
+  "@MSIE": _preventScroll,
+
+  "@!theme=aqua": {
+    onfocus: function(element) {
+      if (element != control._active) {
+        this.addClass(element, this.appearance + _FOCUS);
+      }
+      this.base(element);
+    }
+  },
+  
+  getState: function(element) {
+    if (this.hasClass(element, this.appearance + _FOCUS)) {
+      return this.states.hover;
+    } else {
+      return this.base(element);
+    }
+  },
+
+  layout: function(element) {
+    this.base(element);
+    with (element) {
+      style.color =
+      style.backgroundColor = value;
+    }
+  },
+
+  hitTest: True, // click wherever you want...
+
+  Popup: {
+    appearance: "colorpicker-popup", // popup style class
+
+    onchange: function() {
+      var rgb = map(pluck(this.controls, "value"), Number); // array of rgb values
+      var value = reduce(rgb, function(value, channel) {    // convert to: #string
+        return value += pad(channel.toString(16));
+      }, "#");
+      this.owner.setValue(this.element, value);
+    },
+
+    layout: function() {
+      var rgb = map(this.element.value.slice(1).match(/(\w\w)/g), partial(parseInt, undefined, 16)); // array of rgb values
+      this.controls.forEach(function(input, i) {
+        input.value = rgb[i];
+        slider.layout(input); // redraw
+      });
+    },
+
+    render: function() {
+      var SLIDER = ': <input class="jsb-slider" min="0" max="255">';
+      this.base([
+        "R" + SLIDER,
+        "G" + SLIDER,
+        "B" + SLIDER
+      ].join("<br>"));
+
+      this.controls = this.querySelectorAll("input.jsb-slider");
+
+      this.controls.forEach(slider.attach); // 3 sliders
+
+      this.render = Undefined; // render once
     }
   }
 });
@@ -1218,14 +2207,480 @@ var Rect = Base.extend({
 });
 
 // =========================================================================
+// chrome/styleSheet.js
+// =========================================================================
+
+var _WINDOW =         "Window",
+    _HIGHLIGHT =      "Highlight",
+    _HIGHLIGHT_TEXT = "HighlightText";
+
+if (detect("win.+(Webkit([1-4]|5[01]|52[^89])|theme=aqua)")) { // webkit pre 528 uses the same colours, no matter the theme
+    _WINDOW =         "#fff";
+    _HIGHLIGHT =      "#427cd9";
+    _HIGHLIGHT_TEXT = "#fff";
+}
+
+jsb.theme.cssText = jsb.createStyleSheet({
+  "*": {
+    backgroundPosition:        "9999px 9999px",
+    backgroundAttachment:      "scroll!",
+    backgroundRepeat:          "no-repeat!",
+    padding:                   "2px",
+    border:                    "1px solid #a7a6aa",
+
+    "@theme=classic": {
+      padding:                 "1px 2px 2px 1px",
+      borderWidth:             "2px 1px 1px 2px",
+      borderColor:             "#444 #ddd #ddd #444",
+
+      "@MSIE": {
+        padding:               "1px",
+        border:                "2px inset ButtonHighlight",
+        borderLeftColor:       "ButtonShadow",
+        borderLeftStyle:       "outset",
+        borderTopColor:        "ButtonShadow",
+        borderTopStyle:        "outset"
+      },
+
+      "@Gecko": {
+        padding:               "1px",
+        borderWidth:           "2px",
+        MozBorderTopColors:    "ThreeDShadow ThreeDDarkShadow",
+        MozBorderRightColors:  "ThreeDHighlight ThreeDLightShadow",
+        MozBorderLeftColors:   "ThreeDShadow ThreeDDarkShadow",
+        MozBorderBottomColors: "ThreeDHighlight ThreeDLightShadow"
+      }
+    },
+
+    "@theme=aqua": {
+      padding:                 "1px 2px 2px 2px",
+      borderWidth:             "2px 1px 1px 1px",
+      borderColor:             "#9e9e9e #b4b4b4 #dadada #b4b4b4"
+    },
+
+    "@theme=luna\\/blue": {
+      borderColor:             "#7f9db9"
+    },
+    
+    "@theme=luna\\/olive": {
+      borderColor:             "#a4b97f"
+    },
+    
+    "@theme=luna\\/silver": {
+      borderColor:             "#a5acb2"
+    },
+    
+    "@theme=aero": {
+      borderColor:             "#abadb3 #dbdfe6 #e3e9ef #e2e3ea"
+    },
+    
+    "@theme=zune": {
+      borderColor:             "#969696"
+    }
+  },
+
+  ".jsb-dropdown,.jsb-combobox,.jsb-colorpicker,.jsb-datepicker,.jsb-weekpicker": {
+    "@theme=aqua": { // aqua
+      width:              "10em",
+      BorderRadius:       "5px",
+      BoxShadow:          "0 1px 4px rgba(160, 160, 160, 0.5)",
+      
+      "@!borderImage": {
+        backgroundImage:        "url(%theme%/bg-dropdown.png)!",
+        backgroundPosition:     "right center!",
+        padding:                "1px 22px 1px 4px!",
+        borderWidth:            "1x!",
+        border:                 "1px solid #545454!"
+      },
+
+      "@borderImage": {
+        BorderImage:        "url(%theme%/dropdown.png) 1 18 1 4",
+        borderStyle:        "none",
+        borderWidth:        "1px 18px 1px 4px!",
+        padding:            "1px"
+      }
+    },
+
+    "@!theme=aqua": { // not aqua
+      width:              "8em",
+      paddingRight:       "19px!",
+      backgroundImage:    "url(%theme%/dropdown.png)!"
+    }
+  },
+
+  ".jsb-progressbar,.jsb-slider,.jsb-colorpicker": {
+    textIndent:           "-10em", // hide text for purely visual controls (Safari & Gecko)
+    cursor:               "default",
+    UserModify:           "read-only",
+    UserSelect:           "none",
+
+    "@MSIE": {
+      verticalAlign:      "top",
+      textIndent:         0,
+      lineHeight:         "80em" // hide text for purely visual controls (MSIE)
+    }
+  },
+
+  ".jsb-progressbar": {
+    _height:               "10px",
+    minHeight:             "10px",
+    padding:               "2px",
+    borderColor:           "ThreeDDarkShadow",
+    borderWidth:           "1px",
+    BorderRadius:          "5px",
+    backgroundImage:       "url(%theme%/progressbar.png)!",
+    width:                 "164px"
+  },
+
+  ".jsb-slider": {
+    _height:              "22px",
+    minHeight:            "22px",
+    padding:              0,
+    border:               "none!",
+    backgroundColor:      "transparent",
+    backgroundImage:      "url(%theme%/slider.png)!",
+
+    "@Gecko": {
+      MozBorder:     "initial"
+    },
+
+    "@Gecko1\\.[0-3]": {
+      backgroundColor: "#f2f2f2"
+    }
+  },
+
+  ".jsb-popup": {
+    visibility:        "hidden",
+    backgroundColor:   _WINDOW,
+    borderWidth:       "1px",
+    position:          "absolute!",
+    zIndex:            "999999!",
+    cursor:            "default",
+    padding:           "0",
+    margin:            "0!",
+
+    "@Gecko|Opera|theme=aqua|Webkit": {
+      MozBorder:        "initial",
+      borderColor:      "ThreeDShadow!",
+      borderStyle:      "outset!",
+
+      "@Opera": {
+        borderStyle:    "solid!"
+      }
+    },
+
+    "@theme=classic": {
+      borderColor:      "ThreeDShadow!",
+      borderStyle:      "solid!"
+    }
+  },
+
+  ".jsb-spinner": {
+    textAlign:        "right",
+    width:            "5em",
+    paddingRight:     "19px!",
+    backgroundImage:  "url(%theme%/spinner.png)!"
+  },
+
+  ".jsb-timepicker,.jsb-monthpicker": {
+    width:            "4em",
+    paddingRight:     "19px!",
+    backgroundImage:  "url(%theme%/spinner.png)!"
+  },
+
+  ".jsb-datepicker-days": {
+    UserSelect:      "none!"
+  }
+});
+
+jsb.theme.cssText += jsb.createStyleSheet({
+  ".jsb-error": {
+    borderColor:      "#ff5e5e",
+    outlineColor:     "#ff5e5e"
+  },
+
+  ".jsb-colorpicker": {
+    width:         "4em"
+  },
+
+  ".jsb-datepicker": {
+    width:         "12ex"
+  },
+
+  ".jsb-weekpicker": {
+    width:         "11ex"
+  },
+
+  "@!Webkit": {
+    ".progressbar_focus,.slider_focus,.colorpicker_focus": {
+      Outline:        "1px dotted"
+    }
+  },
+
+  "@Webkit": {
+    ".jsb-slider:focus:not(.slider_focus)": {
+      Outline:        "none!"
+    }
+  },
+
+  ".jsb-datalist": {
+    display:         "none!"
+  },
+
+  ".jsb-menulist": {
+    "@!MSIE": {
+      overflow:      "auto!"
+    },
+
+    "@MSIE": {
+      overflowY:      "auto!"
+    }
+  },
+
+  ".jsb-menulist p": {
+    margin:          "0!",
+    padding:         "1px 2px!",
+    overflow:        "hidden!",
+    whiteSpace:      "nowrap!"
+  },
+
+  ".jsb-colorpicker-popup": {
+    backgroundColor: "ButtonFace!",
+    color:           "ButtonText!",
+    fontSize:        "11px!",
+    padding:         "4px!",
+    overflow:        "hidden!",
+    whiteSpace:      "nowrap!",
+
+    "@Webkit([1-4]|5[01]|52[^89])": {
+      backgroundColor: "#ece9d8!"
+    }
+  },
+
+  ".jsb-colorpicker-popup input": {
+    fontSize:        "11px",
+    margin:          "4px 2px",
+    verticalAlign:   "middle",
+    width:           "127px"
+  },
+
+  ".jsb-datepicker-popup": {
+    backgroundColor: "#fcfcfd!",
+    overflow:        "hidden!"
+  },
+
+  /*".jsb-datepicker-days:focus": {
+    Outline:         "none",
+    borderColor:     _HIGHLIGHT + "!"
+  },*/
+
+  ".jsb-datepicker-popup input": {
+    width:             "5ex",
+
+    "@!MSIE[567]|Opera": {
+      padding:         "1px 19px 1px 2px!"
+    }
+  },
+
+  ".jsb-datepicker-popup th": {
+    backgroundColor: "InfoBackground!",
+    color:           "InfoText!",
+    fontWeight:      "normal!"
+  },
+
+  ".jsb-datepicker-popup th,.jsb-datepicker-days td": {
+    padding:         "2px 0!",
+    textAlign:       "center!",
+    width:           "14%!"
+  },
+
+  ".jsb-datepicker-days td.disabled": {
+    color:           "GrayText!",
+    Opacity:         0.4
+  },
+
+  ".jsb-datepicker-days td.selected,.jsb-datepicker-days tr.selected td": {
+    backgroundColor: _HIGHLIGHT,
+    color:           _HIGHLIGHT_TEXT,
+    Opacity:         1
+  },
+
+  "@theme=luna\\/blue": {
+    ".jsb-datepicker-popup th": {
+      backgroundColor: "#ffffe1!"
+    }
+  },
+
+  "@theme=aqua": {
+    ".jsb-menulist": {
+      Opacity:            0.95
+    },
+
+    ".jsb-spinner,.jsb-timepicker,.jsb-monthpicker": {
+      borderTopWidth: "1px",
+      paddingTop: "2px",
+      borderRightColor:                "transparent",
+      WebkitBorderTopRightRadius:      "5px",
+      WebkitBorderBottomRightRadius:   "5px",
+      "MozBorderRadius-topright":      "5px",
+      "MozBorderRadius-bottomright":   "5px"
+    },
+
+    ".jsb-spinner[disabled],.jsb-spinner[readonly],.jsb-timepicker[disabled],.jsb-timepicker[readonly],.jsb-monthpicker[disabled],.jsb-monthpicker[readonly]": {
+      borderColor:      "#d6d6d6 #e0e0e0 #f0f0f0 #e0e0e0"
+    },
+
+    ".jsb-combobox[readonly],.jsb-combobox[disabled],.jsb-datepicker[readonly],.jsb-datepicker[disabled],.jsb-weekpicker[readonly],.jsb-weekpicker[disabled]": {
+      "@borderImage": {
+        BorderImage:   "url(%theme%/dropdown-disabled.png) 1 18 1 4!"
+      },
+
+      "@!borderImage": {
+        backgroundImage:   "url(%theme%/bg-dropdown-disabled.png)!"
+      }
+    },
+
+    "@borderImage": {
+      ".jsb-colorpicker": {
+        BorderImage:        "url(%theme%/colorpicker.png) 1 18 1 4!"
+      },
+
+      ".jsb-colorpicker[readonly],.jsb-colorpicker[disabled]": {
+        BorderImage:        "url(%theme%/colorpicker-disabled.png) 1 18 1 4!"
+      }
+    },
+
+    "@!borderImage": {
+      ".jsb-colorpicker": {
+        backgroundImage:   "url(%theme%/bg-colorpicker.png)!"
+      },
+
+      ".jsb-colorpicker[readonly],.jsb-colorpicker[disabled]": {
+        backgroundImage:   "url(%theme%/bg-colorpicker-disabled.png)!"
+      }
+    },
+
+    ".jsb-combobox[disabled],.jsb-datepicker[disabled],.jsb-weekpicker[disabled],.jsb-colorpicker[disabled],.jsb-progressbar[disabled]": {
+      color:         "WindowText",
+      Opacity:       0.5
+    },
+
+    ".jsb-colorpicker-popup,.jsb-datepicker-popup": {
+      backgroundColor: _WINDOW + "!",
+      backgroundImage: "url(%theme%/metal.png)!",
+      backgroundRepeat: "repeat!"
+    },
+
+    ".jsb-datepicker": {
+      width:         "7em"
+    },
+
+    ".jsb-weekpicker": {
+      width:         "6em"
+    },
+
+    ".jsb-datepicker-days": {
+      backgroundColor:       _WINDOW + "!"
+    },
+
+    ".jsb-datepicker-days:active": {
+      Outline:       "none!"
+    },
+
+    ".jsb-datepicker-popup th": {
+      backgroundColor: "#89acd5!",
+      color:           "white!"
+    }
+  },
+  
+  ".jsb-tooltip": {
+    borderColor:        "InfoText!",
+    backgroundColor:    "InfoBackground!",
+    color:              "InfoText!",
+    fontSize:           "small!",
+    BoxShadow:          "2px 4px 4px rgba(160, 160, 160, 0.5)"
+  },
+
+  "@Opera[91]": {
+    "input[list],input[type=number],input[type=date],input[type=time],input[type=month],input[type=week],input[type=range]": {
+      border: "initial",
+      borderWidth:             "initial",
+      borderColor:             "initial",
+      backgroundImage: "none!"
+    }
+  }
+});
+//;;;console2.log(jsb.theme.cssText);
+// =========================================================================
+// chrome/locale.js
+// =========================================================================
+
+var locales = {
+  en: {
+    days: "S,M,T,W,T,F,S",
+    months: "January,February,March,April,May,June,July,August,September,October,November,December",
+    firstDay: 1 // Sunday = 0, Monday = 1, etc
+  },
+  
+  de: {
+    days: "S,M,D,M,D,F,S",
+    months: "Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember"
+  },
+  
+  es: {
+    days: "D,L,M,M,J,V,S",
+    months: "Enero,Febrero,Marzo,Abril,Mayo,Junio,Julio,Agosto,Septiembre,Octubre,Noviembre,Diciembre",
+    firstDay: 0
+  },
+  
+  fr: {
+    days: "D,L,M,M,J,V,S",
+    months: "Janvier,Février,Mars,Avril,Mai,Juin,Juillet,Août,Septembre,Octobre,Novembre,Décembre"
+  },
+  
+  it: {
+    days: "D,L,M,M,G,V,S",
+    months: "Gennaio,Febbraio,Marzo,Aprile,Maggio,Giugno,Luglio,Agosto,Settembre,Ottobre,Novembre,Dicembre"
+  },
+  
+  nl: {
+    days: "zo,ma,di,wo,do,vr,za",
+    months: "januari,februari,maart,april,mei,juni,juli,augustus,september,oktober,november,december"
+  },
+  
+  ru: {
+    days: "Вс,Пн,Вт,Ср,Чт,Пт,Сб",
+    months: "Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+  }
+};
+
+var Locale = Base.extend({
+  constructor: function(lang) {
+    this.lang = lang.slice(0, 2);
+    extend(this, locales[this.lang]);
+    this.days = this.days.split(",");
+    for (var i = 0; i < this.firstDay; i++) this.days.push(this.days.shift());
+    this.months = this.months.split(",");
+  }
+});
+extend(Locale.prototype, locales.en);
+
+chrome.locale = new Locale(navigator.language || navigator.systemLanguage);
+
+// =========================================================================
 // chrome/rules.js
 // =========================================================================
 
 chrome.rules = new RuleList({
-  "input.combobox": ComboBox,
-  "input.progressbar": ProgressBar,
-  "input.slider": Slider,
-  "input.spinner": Spinner
+  "input.jsb-combobox": combobox,
+  "input.jsb-progressbar": progressbar,
+  "input.jsb-slider": slider,
+  "input.jsb-spinner": spinner,
+  "input.jsb-timepicker": timepicker,
+  "input.jsb-datepicker": datepicker,
+  "input.jsb-weekpicker": weekpicker,
+  "input.jsb-monthpicker": monthpicker,
+  "input.jsb-colorpicker": colorpicker
 });
 
 eval(this.exports);

@@ -1,5 +1,5 @@
 /*
-  base2 - copyright 2007-2008, Dean Edwards
+  base2 - copyright 2007-2009, Dean Edwards
   http://code.google.com/p/base2/
   http://www.opensource.org/licenses/mit-license.php
 
@@ -7,11 +7,11 @@
     Doeke Zanstra
 */
 
-// timestamp: Sat, 06 Sep 2008 16:52:32
+// timestamp: Mon, 30 Mar 2009 18:26:17
 
 var base2 = {
   name:    "base2",
-  version: "1.0",
+  version: "1.0.1 (alpha1)",
   exports:
     "Base,Package,Abstract,Module,Enumerable,Map,Collection,RegGrp," +
     "Undefined,Null,This,True,False,assignID,detect,global",
@@ -26,28 +26,28 @@ new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
 var Undefined = K(), Null = K(null), True = K(true), False = K(false), This = function(){return this};
 
-var global = This();
-var base2 = global.base2;
+var global = This(), base2 = global.base2;
 
 // private
-var _FORMAT = /%([1-9])/g;
-var _LTRIM = /^\s\s*/;
-var _RTRIM = /\s\s*$/;
-var _RESCAPE = /([\/()[\]{}|*+-.,^$?\\])/g;             // safe regular expressions
-var _BASE = /try/.test(detect) ? /\bbase\b/ : /.*/;     // some platforms don't allow decompilation
-var _HIDDEN = ["constructor", "toString", "valueOf"];   // only override these when prototyping
-var _MSIE_NATIVE_FUNCTION = detect("(jscript)") ?
-  new RegExp("^" + rescape(isNaN).replace(/isNaN/, "\\w+") + "$") : {test: False};
-
-var _counter = 1;
-var _slice = Array.prototype.slice;
+var _IGNORE = K(),
+    _FORMAT = /%([1-9])/g,
+    _LTRIM = /^\s\s*/,
+    _RTRIM = /\s\s*$/,
+    _RESCAPE = /([\/()[\]{}|*+-.,^$?\\])/g,             // safe regular expressions
+    _BASE = /try/.test(detect) ? /\bbase\b/ : /.*/,     // some platforms don't allow decompilation
+    _HIDDEN = ["constructor", "toString"],              // only override these when prototyping
+    _MSIE_NATIVE_FUNCTION = detect("(jscript)") ?
+      new RegExp("^" + rescape(isNaN).replace(/isNaN/, "\\w+") + "$") : {test: False},
+    _counter = 1,
+    _slice = Array.prototype.slice;
 
 _Function_forEach(); // make sure this is initialised
 
-function assignID(object) {
+function assignID(object, name) {
   // Assign a unique ID to an object.
-  if (!object.base2ID) object.base2ID = "b2_" + _counter++;
-  return object.base2ID;
+  if (!name) name = "base2ID";
+  if (!object[name]) object[name] = "b2_" + _counter++;
+  return object[name];
 };
 
 // =========================================================================
@@ -84,10 +84,10 @@ var _subclass = function(_instance, _static) {
   
   // Build the static interface.
   for (var i in Base) _class[i] = this[i];
-  _class.ancestor = this;
-  _class.base = Undefined;
-  //_class.init = Undefined;
   if (_static) extend(_class, _static);
+  _class.ancestor = this;
+  _class.ancestorOf = Base.ancestorOf;
+  _class.base = Undefined;
   _class.prototype = _prototype;
   if (_class.init) _class.init();
   
@@ -109,7 +109,15 @@ var Base = _subclass.call(Object, {
     // Call this method from any other method to invoke the current method's ancestor (super).
   },
   
-  extend: delegate(extend)
+  extend: delegate(extend),
+  
+  toString: function() {
+    if (this.constructor.toString == Function.prototype.toString) {
+      return "[object base2.Base]";
+    } else {
+      return "[object " + this.constructor.toString().slice(1, -1) + "]";
+    }
+  }
 }, Base = {
   ancestorOf: function(klass) {
     return _ancestorOf(this, klass);
@@ -142,44 +150,53 @@ var Base = _subclass.call(Object, {
 
 var Package = Base.extend({
   constructor: function(_private, _public) {
-    this.extend(_public);
-    if (this.init) this.init();
+    var pkg = this;
     
-    if (this.name && this.name != "base2") {
-      if (!this.parent) this.parent = base2;
-      this.parent.addName(this.name, this);
-      this.namespace = format("var %1=%2;", this.name, String2.slice(this, 1, -1));
+    pkg.extend(_public);
+    
+    if (pkg.name && pkg.name != "base2") {
+      if (_public.parent === undefined) pkg.parent = base2;
+      if (pkg.parent) pkg.parent.addName(pkg.name, pkg);
+      pkg.namespace = format("var %1=%2;", pkg.name, String2.slice(pkg, 1, -1));
     }
     
     if (_private) {
       // This next line gets round a bug in old Mozilla browsers
       var JSNamespace = base2.JavaScript ? base2.JavaScript.namespace : "";
+      
       // This string should be evaluated immediately after creating a Package object.
-      _private.imports = Array2.reduce(csv(this.imports), function(namespace, name) {
+      var namespace = "var base2=(function(){return this.base2})();" + base2.namespace + JSNamespace;
+      var imports = csv(pkg.imports), name;
+      for (var i = 0; name = imports[i]; i++) {
         var ns = lookup(name) || lookup("JavaScript." + name);
-        ;;; assert(ns, format("Object not found: '%1'.", name), ReferenceError);
-        return namespace += ns.namespace;
-      }, "var base2=(function(){return this.base2})();" + base2.namespace + JSNamespace) + lang.namespace;
+        if (!ns) throw new ReferenceError(format("Object not found: '%1'.", name));
+        namespace += ns.namespace;
+      }
+      _private.init = function() {
+        if (pkg.init) pkg.init();
+      };
+      _private.imports = namespace + lang.namespace + "this.init();";
       
       // This string should be evaluated after you have created all of the objects
       // that are being exported.
-      _private.exports = Array2.reduce(csv(this.exports), function(namespace, name) {
-        var fullName = this.name + "." + name;
-        this.namespace += "var " + name + "=" + fullName + ";";
-        return namespace += "if(!" + fullName + ")" + fullName + "=" + name + ";";
-      }, "", this) + "this._label_" + this.name + "();";
+      namespace = "";
+      var exports = csv(pkg.exports);
+      for (var i = 0; name = exports[i]; i++) {
+        var fullName = pkg.name + "." + name;
+        pkg.namespace += "var " + name + "=" + fullName + ";";
+        namespace += "if(!" + fullName + ")" + fullName + "=" + name + ";";
+      }
+      _private.exports = namespace + "this._label_" + pkg.name + "();";
       
-      var pkg = this;
-      var packageName = String2.slice(this, 1, -1);
-      _private["_label_" + this.name] = function() {
-        Package.forEach (pkg, function(object, name) {
-          if (object && object.ancestorOf == Base.ancestorOf) {
-            object.toString = K(format("[%1.%2]", packageName, name));
-            if (object.prototype.toString == Base.prototype.toString) {
-              object.prototype.toString = K(format("[object %1.%2]", packageName, name));
-            }
+      // give objects and classes pretty toString methods
+      var packageName = String2.slice(pkg, 1, -1);
+      _private["_label_" + pkg.name] = function() {
+        for (var name in pkg) {
+          var object = pkg[name];
+          if (object && object.ancestorOf == Base.ancestorOf) { // it's a class
+            object.toString = K("[" + packageName + "." + name + "]");
           }
-        });
+        }
       };
     }
 
@@ -276,7 +293,7 @@ var Module = Abstract.extend(null, {
           if (module[name] === undefined) {
             var property = _interface[name];
             if (typeof property == "function" && property.call && _interface.prototype[name]) {
-              property = _staticModuleMethod(_interface, name);
+              property = _createStaticModuleMethod(_interface, name);
             }
             module[name] = property;
           }
@@ -304,19 +321,23 @@ var Module = Abstract.extend(null, {
   }
 });
 
+
+Module.prototype.base =
+Module.prototype.extend = _IGNORE;
+
 function _extendModule(module, _interface) {
   var proto = module.prototype;
   var id = module.toString().slice(1, -1);
   for (var name in _interface) {
     var property = _interface[name], namespace = "";
-    if (name.charAt(0) == "@") { // object detection
+    if (name.indexOf("@") == 0) { // object detection
       if (detect(name.slice(1))) _extendModule(module, property);
     } else if (!proto[name]) {
       if (name == name.toUpperCase()) {
         namespace = "var " + name + "=" + id + "." + name + ";";
       } else if (typeof property == "function" && property.call) {
         namespace = "var " + name + "=base2.lang.bind('" + name + "'," + id + ");";
-        proto[name] = _moduleMethod(module, name);
+        proto[name] = _createModuleMethod(module, name);
         ;;; proto[name]._module = module; // introspection
       }
       if (module.namespace.indexOf(namespace) == -1) {
@@ -326,13 +347,13 @@ function _extendModule(module, _interface) {
   }
 };
 
-function _staticModuleMethod(module, name) {
+function _createStaticModuleMethod(module, name) {
   return function() {
     return module[name].apply(module, arguments);
   };
 };
 
-function _moduleMethod(module, name) {
+function _createModuleMethod(module, name) {
   return function() {
     var args = _slice.call(arguments);
     args.unshift(this);
@@ -478,6 +499,7 @@ var Map = Base.extend({
   put: function(key, value) {
     // create the new entry (or overwrite the old entry).
     this[_HASH + key] = value;
+    return value;
   },
 
   remove: function(key) {
@@ -533,7 +555,7 @@ var Collection = Map.extend({
   add: function(key, item) {
     // Duplicates not allowed using add().
     // But you can still overwrite entries using put().
-    assert(!this.has(key), "Duplicate key '" + key + "'.");
+    if (this.has(key)) throw "Duplicate key '" + key + "'.";
     this.put.apply(this, arguments);
   },
 
@@ -570,8 +592,8 @@ var Collection = Map.extend({
   },
 
   insertAt: function(index, key, item) {
-    assert(this[_KEYS].item(index) !== undefined, "Index out of bounds.");
-    assert(!this.has(key), "Duplicate key '" + key + "'.");
+    if (this[_KEYS].item(index) == null) throw "Index out of bounds.";
+    if (this.has(key)) throw "Duplicate key '" + key + "'.";
     this[_KEYS].insertAt(index, String(key));
     this[_HASH + key] = null; // placeholder
     this.put.apply(this, _slice.call(arguments, 1));
@@ -582,19 +604,20 @@ var Collection = Map.extend({
   },
 
   put: function(key, item) {
-    if (!this.has(key)) {
-      this[_KEYS].push(String(key));
-    }
     var klass = this.constructor;
     if (klass.Item && !instanceOf(item, klass.Item)) {
       item = klass.create.apply(klass, arguments);
     }
+    if (!this.has(key)) {
+      this[_KEYS].push(String(key));
+    }
     this[_HASH + key] = item;
+    return item;
   },
 
   putAt: function(index, item) {
     arguments[0] = this[_KEYS].item(index);
-    assert(arguments[0] !== undefined, "Index out of bounds.");
+    if (arguments[0] == null) throw "Index out of bounds.";
     this.put.apply(this, arguments);
   },
 
@@ -727,7 +750,7 @@ var RegGrp = Collection.extend({
     if (instanceOf(expression, RegExp)) {
       arguments[1] = expression.source;
     }
-    return base(this, arguments);
+    return this.base.apply(this, arguments);
   },
 
   test: function(string) {
@@ -755,7 +778,7 @@ var RegGrp = Collection.extend({
         if (instanceOf(expression, RegExp)) {
           arguments[0] = expression.source;
         }
-        return base(this, arguments);
+        return this.base.apply(this, arguments);
       });
     }, this.prototype);
   },
@@ -771,7 +794,7 @@ var RegGrp = Collection.extend({
         // a simple lookup? (e.g. "$2")
         if (_RG_LOOKUP_SIMPLE.test(replacement)) {
           // store the index (used for fast retrieval of matched strings)
-          replacement = parseInt(replacement.slice(1));
+          replacement = parseInt(replacement.slice(1), 10);
         } else { // a complicated lookup (e.g. "Hello $2 $1")
           // build a function to do the lookup
           // Improved version by Alexei Gorkov:
@@ -810,7 +833,7 @@ var RegGrp = Collection.extend({
 var lang = {
   name:      "lang",
   version:   base2.version,
-  exports:   "assert,assertArity,assertType,base,bind,copy,extend,forEach,format,instanceOf,match,pcopy,rescape,trim,typeOf",
+  exports:   "assert,assertArity,assertType,bind,copy,extend,forEach,format,instanceOf,match,pcopy,rescape,trim,typeOf",
   namespace: "" // fixed later
 };
 
@@ -862,20 +885,19 @@ function _dummy(){};
 // lang/extend.js
 // =========================================================================
 
-function base(object, args) {
-  return object.base.apply(object, args);
-};
-
 function extend(object, source) { // or extend(object, key, value)
   if (object && source) {
+    var useProto = base2.__prototyping;
     if (arguments.length > 2) { // Extending with a key/value pair.
       var key = source;
       source = {};
       source[key] = arguments[2];
+      useProto = true;
     }
+    //var proto = (typeof source == "function" ? Function : Object).prototype;
     var proto = global[(typeof source == "function" ? "Function" : "Object")].prototype;
     // Add constructor, toString etc
-    if (base2.__prototyping) {
+    if (useProto) {
       var i = _HIDDEN.length, key;
       while ((key = _HIDDEN[--i])) {
         var value = source[key];
@@ -891,11 +913,11 @@ function extend(object, source) { // or extend(object, key, value)
     // Copy each of the source object's properties to the target object.
     for (key in source) {
       if (proto[key] === undefined) {
-        var value = source[key];
+        value = source[key];
         // Object detection.
-        if (key.charAt(0) == "@") {
+        if (key.indexOf("@") == 0) {
           if (detect(key.slice(1))) extend(object, value);
-        } else {
+        } else if (value != _IGNORE) {
           // Check for method overriding.
           var ancestor = object[key];
           if (ancestor && typeof value == "function") {
@@ -944,6 +966,7 @@ function _override(object, name, method) {
   object[name] = _base;
   // introspection (removed when packed)
   ;;; _base.toString = K(method + "");
+  object = null;
 };
 
 // =========================================================================
@@ -981,7 +1004,7 @@ forEach.csv = function(string, block, context) {
 
 forEach.detect = function(object, block, context) {
   forEach (object, function(value, key) {
-    if (key.charAt(0) == "@") { // object detection
+    if (key.indexOf("@") == 0) { // object detection
       if (detect(key.slice(1))) forEach (value, arguments.callee);
     } else block.call(context, value, key, object);
   });
@@ -998,7 +1021,7 @@ function _Array_forEach(array, block, context) {
       block.call(context, array.charAt(i), i, array);
     }
   } else { // Cater for sparse arrays.
-    for (i = 0; i < length; i++) {    
+    for (i = 0; i < length; i++) {
     /*@cc_on @*/
     /*@if (@_jscript_version < 5.2)
       if ($Legacy.has(array, i))
@@ -1058,11 +1081,11 @@ function instanceOf(object, klass) {
   /*@cc_on  
   // COM objects don't have a constructor
   if (typeof object.constructor != "function") {
-    return typeOf(object) == typeof klass.prototype.valueOf();
+    return klass == Object;
   }
   @*/
-    if (object.constructor == klass) return true;
-    if (klass.ancestorOf) return klass.ancestorOf(object.constructor);
+  if (object.constructor == klass) return true;
+  if (klass.ancestorOf) return klass.ancestorOf(object.constructor);
   /*@if (@_jscript_version < 5.1)
     // do nothing
   @else @*/
@@ -1076,14 +1099,14 @@ function instanceOf(object, klass) {
   if (Base.ancestorOf == object.constructor.ancestorOf) return klass == Object;
   
   switch (klass) {
-    case Array: // This is the only troublesome one.
-      return !!(typeof object == "object" && object.join && object.splice);
+    case Array:
+      return _toString.call(object) == "[object Array]";
+    case Date:
+      return _toString.call(object) == "[object Date]";
+    case RegExp:
+      return _toString.call(object) == "[object RegExp]";
     case Function:
       return typeOf(object) == "function";
-    case RegExp:
-      return typeof object.constructor.$1 == "string";
-    case Date:
-      return !!object.getTimezoneOffset;
     case String:
     case Number:
     case Boolean:
@@ -1094,6 +1117,8 @@ function instanceOf(object, klass) {
   
   return false;
 };
+
+var _toString = Object.prototype.toString;
 
 // =========================================================================
 // lang/typeOf.js
@@ -1107,11 +1132,13 @@ function typeOf(object) {
     case "object":
       return object == null
         ? "null"
-        : typeof object.constructor == "undefined" // COM object
+        : typeof object.constructor != "function" // COM object
           ? _MSIE_NATIVE_FUNCTION.test(object)
             ? "function"
             : type
-          : typeof object.constructor.prototype.valueOf(); // underlying type
+          : _toString.call(object) == "[object Date]"
+            ? type
+            : typeof object.constructor.prototype.valueOf(); // underlying type
     case "function":
       return typeof object.call == "function" ? type : "object";
     default:
@@ -1163,7 +1190,7 @@ function _createObject2(Native, constructor, generics, extensions) {
 
   // Remove methods that are already implemented.
   for (var name in INative) {
-    if (name != "prototype" && Native[name]) {
+    if (name != "prototype" && name != "toString" && Native[name]) {
       INative[name] = Native[name];
       delete INative.prototype[name];
     }
@@ -1200,7 +1227,7 @@ _testDate.setUTCDate(15);
 if (_testDate.getUTCHours() != 0) {
   forEach.csv("FullYear,Month,Date,Hours,Minutes,Seconds,Milliseconds", function(type) {
     extend(Date.prototype, "setUTC" + type, function() {
-      var value = base(this, arguments);
+      var value = this.base.apply(this, arguments);
       if (value >= 57722401000) {
         value -= 3600000;
         this.setTime(value);
@@ -1245,6 +1272,22 @@ var Array2 = _createObject2(
   Array,
   "concat,join,pop,push,reverse,shift,slice,sort,splice,unshift", // generics
   Enumerable, {
+    batch: function(array, block, timeout, oncomplete, context) {
+      var index = 0, length = array.length;
+      setTimeout(function() {
+        var now = Date2.now(), start = now, k = 0;
+        while (index < length && (now - start < timeout)) {
+          block.call(context, array[index], index++, array);
+          if (k++ < 5 || k % 50 == 0) now = Date2.now();
+        }
+        if (index < length) {
+          setTimeout(arguments.callee, 10);
+        } else {
+          if (oncomplete) oncomplete.call(context);
+        }
+      }, 1);
+    },
+
     combine: function(keys, values) {
       // Combine two arrays to make a hash.
       if (!values) values = keys;
@@ -1293,7 +1336,6 @@ var Array2 = _createObject2(
     
     insertAt: function(array, index, item) {
       Array2.splice(array, index, 0, item);
-      return item;
     },
     
     item: function(array, index) {
@@ -1316,7 +1358,7 @@ var Array2 = _createObject2(
   
     map: function(array, block, context) {
       var result = [];
-      Array2.forEach (array, function(item, index) {
+      _Array_forEach (array, function(item, index) {
         result[index] = block.call(context, item, index, array);
       });
       return result;
@@ -1342,6 +1384,7 @@ var Array2 = _createObject2(
   }
 );
 
+Array2.forEach = _Array_forEach;
 Array2.reduce = Enumerable.reduce; // Mozilla does not implement the thisObj argument
 
 Array2.like = function(object) {
@@ -1360,7 +1403,7 @@ Array2.like = function(object) {
 // http://developer.mozilla.org/es4/proposals/date_and_time.html
 
 // big, ugly, regular expression
-var _DATE_PATTERN = /^((-\d+|\d{4,})(-(\d{2})(-(\d{2}))?)?)?T((\d{2})(:(\d{2})(:(\d{2})(\.(\d{1,3})(\d)?\d*)?)?)?)?(([+-])(\d{2})(:(\d{2}))?|Z)?$/;  
+var _DATE_PATTERN = /^((-\d+|\d{4,})(-(\d{2})(-(\d{2}))?)?)?T((\d{2})(:(\d{2})(:(\d{2})(\.(\d{1,3})(\d)?\d*)?)?)?)?(([+-])(\d{2})(:(\d{2}))?|Z)?$/;
 var _DATE_PARTS = { // indexes to the sub-expressions of the RegExp above
   FullYear: 2,
   Month: 4,
@@ -1378,15 +1421,15 @@ var _TIMEZONE_PARTS = { // idem, but without the getter/setter usage on Date obj
   Minutes: 20
 };
 
-var _TRIM_ZEROES   = /(((00)?:0+)?:0+)?\.0+$/;
-var _TRIM_TIMEZONE = /(T[0-9:.]+)$/;
+//var _TRIM_ZEROES   = /(((00)?:0+)?:0+)?\.0+$/;
+//var _TRIM_TIMEZONE = /(T[0-9:.]+)$/;
 
 var Date2 = _createObject2(
   Date, 
   function(yy, mm, dd, h, m, s, ms) {
     switch (arguments.length) {
       case 0: return new Date;
-      case 1: return typeof yy == "number" ? new Date(yy) : Date2.parse(yy);
+      case 1: return typeof yy == "number" ? new Date(yy) : new Date(Date2.parse(yy));
       default: return new Date(yy, mm, arguments.length == 2 ? 1 : dd, h || 0, m || 0, s || 0, ms || 0);
     }
   }, "", {
@@ -1399,8 +1442,9 @@ var Date2 = _createObject2(
           return ("000" + value).slice(-digits.length); // pad
         });
       }
-      // remove trailing zeroes, and remove UTC timezone, when time's absent
-      return string.replace(_TRIM_ZEROES, "").replace(_TRIM_TIMEZONE, "$1Z");
+      //// remove trailing zeroes, and remove UTC timezone, when time's absent
+      //return string.replace(_TRIM_ZEROES, "").replace(_TRIM_TIMEZONE, "$1Z");
+      return string + "Z";
     }
   }
 );
@@ -1413,7 +1457,7 @@ Date2.now = function() {
 
 Date2.parse = function(string, defaultDate) {
   if (arguments.length > 1) {
-    assertType(defaultDate, "number", "default date should be of type 'number'.")
+    assertType(defaultDate, "number", "Default date should be of type 'number'.")
   }
   // parse ISO date
   var parts = match(string, _DATE_PATTERN);
@@ -1425,12 +1469,13 @@ Date2.parse = function(string, defaultDate) {
     var prefix = parts[_TIMEZONE_PARTS.UTC] || parts[_TIMEZONE_PARTS.Hours] ? "UTC" : "";
     for (var part in _DATE_PARTS) {
       var value = parts[_DATE_PARTS[part]];
-      if (!value) continue; // empty value
-      // set a date part
-      date["set" + prefix + part](value);
-      // make sure that this setting does not overflow
-      if (date["get" + prefix + part]() != parts[_DATE_PARTS[part]]) {
-        return NaN;
+      if (value) {
+        // set a date part
+        date["set" + prefix + part](value);
+        // make sure that this setting does not overflow
+        if (date["get" + prefix + part]() != parts[_DATE_PARTS[part]]) {
+          return NaN;
+        }
       }
     }
     // timezone can be set, without time being available
@@ -1439,7 +1484,7 @@ Date2.parse = function(string, defaultDate) {
       var hours = Number(parts[_TIMEZONE_PARTS.Sign] + parts[_TIMEZONE_PARTS.Hours]);
       var minutes = Number(parts[_TIMEZONE_PARTS.Sign] + (parts[_TIMEZONE_PARTS.Minutes] || 0));
       date.setUTCMinutes(date.getUTCMinutes() + (hours * 60) + minutes);
-    } 
+    }
     return date.valueOf();
   } else {
     return Date.parse(string);
@@ -1613,19 +1658,23 @@ function detect() {
   //    e.g. detect("!(document.addEventListener)");
   //  2. Platform detection (browser sniffing)
   //    e.g. detect("MSIE");
-  //    e.g. detect("MSIE|opera");
+  //    e.g. detect("MSIE|Opera");
 
   var jscript = NaN/*@cc_on||@_jscript_version@*/; // http://dean.edwards.name/weblog/2007/03/sniff/#comment85164
   var javaEnabled = global.java ? true : false;
   if (global.navigator) { // browser
     var MSIE = /MSIE[\d.]+/g;
-    var element = document.createElement("span");
+    var element = document.createElement("span"),
+        style = element.style;
+    element.expando = 1;
     // Close up the space between name and version number.
     //  e.g. MSIE 6 -> MSIE6
     var userAgent = navigator.userAgent.replace(/([a-z])[\s\/](\d)/gi, "$1$2");
-    // Fix opera's (and others) user agent string.
+    // Fix Opera's (and others) user agent string.
     if (!jscript) userAgent = userAgent.replace(MSIE, "");
     if (MSIE.test(userAgent)) userAgent = userAgent.match(MSIE)[0] + " " + userAgent.replace(MSIE, "");
+    if (/Gecko/.test(userAgent)) userAgent = userAgent.replace(/rv:/, "Gecko");
+    if (!/Compat$/.test(document.compatMode)) userAgent += ";QuirksMode";
     base2.userAgent = navigator.platform + " " + userAgent.replace(/like \w+/gi, "");
     javaEnabled &= navigator.javaEnabled();
 //} else if (java) { // rhino
@@ -1639,11 +1688,11 @@ function detect() {
   detect = function(expression) {
     if (_cache[expression] == null) {
       var returnValue = false, test = expression;
-      var not = test.charAt(0) == "!";
+      var not = test.indexOf("!") == 0;
       if (not) test = test.slice(1);
-      if (test.charAt(0) == "(") {
+      if (test.indexOf("(") == 0) {
         try {
-          returnValue = new Function("element,jscript,java,global", "return !!" + test)(element, jscript, javaEnabled, global);
+          returnValue = new Function("element,style,jscript,java,global", "return !!" + test)(element, style, jscript, javaEnabled, global);
         } catch (ex) {
           // the test failed
         }
@@ -1672,7 +1721,6 @@ exports += this.exports;
 JavaScript = new Package(this, JavaScript);
 eval(exports + this.exports);
 
-lang.base = base;
 lang.extend = extend;
 
 }; ////////////////////  END: CLOSURE  /////////////////////////////////////

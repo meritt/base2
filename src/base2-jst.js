@@ -1,5 +1,5 @@
 /*
-  base2 - copyright 2007-2008, Dean Edwards
+  base2 - copyright 2007-2009, Dean Edwards
   http://code.google.com/p/base2/
   http://www.opensource.org/licenses/mit-license.php
 
@@ -7,12 +7,12 @@
     Doeke Zanstra
 */
 
-// timestamp: Sat, 06 Sep 2008 16:52:33
+// timestamp: Mon, 30 Mar 2009 18:26:18
 
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
 // =========================================================================
-// JST/package.js
+// jst/package.js
 // =========================================================================
 
 // JavaScript Templates
@@ -22,16 +22,16 @@ new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
     http://erik.eae.net/archives/2005/05/27/01.03.26/
 */
 
-var JST = new base2.Package(this, {
-  name:    "JST",
-  version: "0.9.2",
+var jst = new base2.Package(this, {
+  name:    "jst",
+  version: base2.version,
   exports: "Command,Environment,Interpreter,Parser"
 });
 
 eval(this.imports);
 
 // =========================================================================
-// JST/Command.js
+// jst/Command.js
 // =========================================================================
 
 var STDOUT = 1;
@@ -52,7 +52,7 @@ var Command = Base.extend({
 });
 
 // =========================================================================
-// JST/Environment.js
+// jst/Environment.js
 // =========================================================================
 
 var Environment = Base.extend({
@@ -66,7 +66,7 @@ var Environment = Base.extend({
 });
 
 // =========================================================================
-// JST/Interpreter.js
+// jst/Interpreter.js
 // =========================================================================
 
 var Interpreter = Base.extend({
@@ -92,7 +92,7 @@ var Interpreter = Base.extend({
 });
 
 // =========================================================================
-// JST/Escape.js
+// jst/Escape.js
 // =========================================================================
 
 var Escape = Module.extend({
@@ -122,7 +122,7 @@ var Escape = Module.extend({
 });
 
 // =========================================================================
-// JST/Parser.js
+// jst/Parser.js
 // =========================================================================
 
 // this needs a re-write but it works well enough for now.
@@ -152,7 +152,7 @@ var Parser = Base.extend({
     var evaluate = function(block) {
       block = block.replace(Parser.TRIM, "");
       if (!block) return "";
-      if (block.charAt(0) == "=") {
+      if (block.indexOf("=") == 0) {
         block = "\necho(" + block.replace(TRIM, "") + ");";
       }
       var replacement = "\x01" + evaluated.length + "\x01";

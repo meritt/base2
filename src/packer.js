@@ -3,7 +3,7 @@
   http://www.opensource.org/licenses/mit-license.php
 */
 
-// timestamp: Sat, 06 Sep 2008 16:52:33
+// timestamp: Mon, 30 Mar 2009 18:26:18
 
 new function() { ///////////////  BEGIN: CLOSURE  ///////////////
 
@@ -269,7 +269,7 @@ var Base62 = Encoder.extend({
   },
 
   getPattern: function(words) {
-    var words = words.map(String).join("|").replace(/\|{2,}/g, "|").replace(/^\|+|\|+$/g, "") || "\\x0";
+    words = words.map(String).join("|").replace(/\|{2,}/g, "|").replace(/^\|+|\|+$/g, "") || "\\x0";
     return new RegExp("\\b(" + words + ")\\b", "g");
   }
 }, {
@@ -405,6 +405,7 @@ var Minifier = Base.extend({
     "\\b\\s+@": " @",
     "(\\d)\\s+(\\.\\s*[a-z\\$_\\[(])": "$1 $2", // http://dean.edwards.name/weblog/2007/04/packer3/#comment84066
     "([+-])\\s+([+-])": "$1 $2", // c = a++ +b;
+    "(\\w)\\s+([\\u0080-\\uffff])": "$1 $2", // http://code.google.com/p/base2/issues/detail?id=78
     "\\b\\s+\\$\\s+\\b": " $ ", // var $ in
     "\\$\\s+\\b": "$ ", // object$ in
     "\\b\\s+\\$": " $", // return $object
