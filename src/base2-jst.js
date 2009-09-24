@@ -7,7 +7,7 @@
     Doeke Zanstra
 */
 
-// timestamp: Mon, 30 Mar 2009 18:26:18
+// timestamp: Wed, 23 Sep 2009 19:38:57
 
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
@@ -19,6 +19,7 @@ new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
 /*
   Based on the work of Erik Arvidsson:
+  
     http://erik.eae.net/archives/2005/05/27/01.03.26/
 */
 
@@ -38,8 +39,9 @@ var STDOUT = 1;
 
 var Command = Base.extend({
   constructor: function(command) {
-    this[STDOUT] = [];    
-    this.extend(command); // additional commands
+    this[STDOUT] = [];
+    // Additional commands.
+    this.extend(command);
   },
   
   echo: function(string) {
@@ -57,6 +59,7 @@ var Command = Base.extend({
 
 var Environment = Base.extend({
   set: function(name, value) {
+    // Set a variable by name
     this[name] = value;
   },
   
@@ -82,7 +85,7 @@ var Interpreter = Base.extend({
   
   interpret: function(template) {
     var command = new Command(this.command);
-    var code = base2.namespace + JavaScript.namespace + lang.namespace +
+    var code = base2.namespace + js.namespace + lang.namespace +
       "\nwith(arguments[0])with(arguments[1]){\n" +
         this.parser.parse(template) +
       "}\nreturn arguments[0].toString()";
@@ -98,7 +101,7 @@ var Interpreter = Base.extend({
 var Escape = Module.extend({
   escape: function(parser, string) {
     if (parser.escapeChar) {
-      // encode escaped characters
+      // Encode escaped characters.
       var ESCAPE = new RegExp(rescape(parser.escapeChar + "."), "g");
       string = string.replace(ESCAPE, function(match) {
         return String.fromCharCode(Escape.BASE + match.charCodeAt(1));
@@ -108,7 +111,7 @@ var Escape = Module.extend({
   },
   
   unescape: function(parser, string) {
-    // decode escaped characters
+    // Decode escaped characters.
     if (parser.escapeChar) {
       string = string.replace(Escape.RANGE, function(match) {
         return parser.escapeChar + String.fromCharCode(match.charCodeAt(0) - Escape.BASE);
@@ -125,7 +128,7 @@ var Escape = Module.extend({
 // jst/Parser.js
 // =========================================================================
 
-// this needs a re-write but it works well enough for now.
+// This needs a re-write but it works well enough for now.
 
 var Parser = Base.extend({
   escapeChar: "\\",
@@ -146,9 +149,9 @@ var Parser = Base.extend({
   },
   
   _encode: function(string) {    
-    var TRIM = /^=|;+$/g;
-    var BLOCK = /<%[^%]*%([^>][^%]*%)*>/g;
-    var evaluated = this._evaluated = [];
+    var TRIM = /^=|;+$/g,
+        BLOCK = /<%[^%]*%([^>][^%]*%)*>/g,
+        evaluated = this._evaluated = [];
     var evaluate = function(block) {
       block = block.replace(Parser.TRIM, "");
       if (!block) return "";
@@ -168,13 +171,16 @@ var Parser = Base.extend({
     '\\n':  '\\n',
     '\\r':  '\\r'
   }),
+  
   EVALUATED: /\x01(\d+)\x01/g,
+  
   TEXT: new RegGrp({
     "\\x01\\d+\\x01": RegGrp.IGNORE,
     "[^\\x01]+": function(match) {
       return '\necho("' + Parser.ESCAPE.exec(match) + '");';
     }
   }),
+  
   TRIM: /^<%\-\-.*\-\-%>$|^<%\s*|\s*%>$/g
 });
 

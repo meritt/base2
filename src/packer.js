@@ -3,7 +3,7 @@
   http://www.opensource.org/licenses/mit-license.php
 */
 
-// timestamp: Mon, 30 Mar 2009 18:26:18
+// timestamp: Wed, 23 Sep 2009 19:38:57
 
 new function() { ///////////////  BEGIN: CLOSURE  ///////////////
 
@@ -120,6 +120,13 @@ var Privates = Encoder.extend({
     return this.base(Privates.PATTERN, function(index) {
       return "_" + Packer.encode62(index);
     }, Privates.IGNORE);
+  },
+
+  search: function(script) {
+    var words = this.base(script),
+       _private = words.get("_private");
+    if (_private) _private.count = 99999;
+    return words;
   }
 }, {
   IGNORE: {

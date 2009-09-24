@@ -7,11 +7,11 @@
     Doeke Zanstra
 */
 
-// timestamp: Mon, 30 Mar 2009 18:26:17
+// timestamp: Wed, 23 Sep 2009 19:38:55
 
 var base2 = {
   name:    "base2",
-  version: "1.0.1 (alpha1)",
+  version: "1.1 (alpha1)",
   exports:
     "Base,Package,Abstract,Module,Enumerable,Map,Collection,RegGrp," +
     "Undefined,Null,This,True,False,assignID,detect,global",
@@ -24,10 +24,12 @@ new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 // base2/header.js
 // =========================================================================
 
+/*@cc_on @*/
+
 var Undefined = K(), Null = K(null), True = K(true), False = K(false), This = function(){return this};
 
 var global = This(), base2 = global.base2;
-
+  
 // private
 var _IGNORE = K(),
     _FORMAT = /%([1-9])/g,
@@ -45,7 +47,7 @@ _Function_forEach(); // make sure this is initialised
 
 function assignID(object, name) {
   // Assign a unique ID to an object.
-  if (!name) name = "base2ID";
+  if (!name) name = object.nodeType == 1 ? "uniqueID" : "base2ID";
   if (!object[name]) object[name] = "b2_" + _counter++;
   return object[name];
 };
@@ -61,6 +63,9 @@ var _subclass = function(_instance, _static) {
   base2.__prototyping = this.prototype;
   var _prototype = new this;
   if (_instance) extend(_prototype, _instance);
+  _prototype.base = function() {
+    // call this method from any other method to invoke that method's ancestor
+  };
   delete base2.__prototyping;
   
   // Create the wrapper for the constructor function.
@@ -68,7 +73,7 @@ var _subclass = function(_instance, _static) {
   function _class() {
     // Don't call the constructor function when prototyping.
     if (!base2.__prototyping) {
-      if (this.constructor == arguments.callee || this.__constructing) {
+      if (this.constructor == _class || this.__constructing) {
         // Instantiation.
         this.__constructing = true;
         _constructor.apply(this, arguments);
@@ -87,7 +92,7 @@ var _subclass = function(_instance, _static) {
   if (_static) extend(_class, _static);
   _class.ancestor = this;
   _class.ancestorOf = Base.ancestorOf;
-  _class.base = Undefined;
+  _class.base = _prototype.base;
   _class.prototype = _prototype;
   if (_class.init) _class.init();
   
@@ -105,30 +110,26 @@ var Base = _subclass.call(Object, {
     }
   },
   
-  base: function() {
-    // Call this method from any other method to invoke the current method's ancestor (super).
-  },
-  
   extend: delegate(extend),
   
   toString: function() {
     if (this.constructor.toString == Function.prototype.toString) {
       return "[object base2.Base]";
     } else {
-      return "[object " + this.constructor.toString().slice(1, -1) + "]";
+      return "[object " + String2.slice(this.constructor, 1, -1) + "]";
     }
   }
 }, Base = {
   ancestorOf: function(klass) {
     return _ancestorOf(this, klass);
   },
-  
+
   extend: _subclass,
-    
+
   forEach: function(object, block, context) {
     _Function_forEach(this, object, block, context);
   },
-  
+
   implement: function(source) {
     if (typeof source == "function") {
       ;;; if (_ancestorOf(Base, source)) {
@@ -153,7 +154,7 @@ var Package = Base.extend({
     var pkg = this;
     
     pkg.extend(_public);
-    
+
     if (pkg.name && pkg.name != "base2") {
       if (_public.parent === undefined) pkg.parent = base2;
       if (pkg.parent) pkg.parent.addName(pkg.name, pkg);
@@ -162,13 +163,13 @@ var Package = Base.extend({
     
     if (_private) {
       // This next line gets round a bug in old Mozilla browsers
-      var JSNamespace = base2.JavaScript ? base2.JavaScript.namespace : "";
+      var jsNamespace = base2.js ? base2.js.namespace : "";
       
       // This string should be evaluated immediately after creating a Package object.
-      var namespace = "var base2=(function(){return this.base2})();" + base2.namespace + JSNamespace;
+      var namespace = "var base2=(function(){return this.base2})(),_private=base2.toString;" + base2.namespace + jsNamespace;
       var imports = csv(pkg.imports), name;
       for (var i = 0; name = imports[i]; i++) {
-        var ns = lookup(name) || lookup("JavaScript." + name);
+        var ns = lookup(name) || lookup("js." + name);
         if (!ns) throw new ReferenceError(format("Object not found: '%1'.", name));
         namespace += ns.namespace;
       }
@@ -193,7 +194,7 @@ var Package = Base.extend({
       _private["_label_" + pkg.name] = function() {
         for (var name in pkg) {
           var object = pkg[name];
-          if (object && object.ancestorOf == Base.ancestorOf) { // it's a class
+          if (object && object.ancestorOf == Base.ancestorOf && name != "constructor") { // it's a class
             object.toString = K("[" + packageName + "." + name + "]");
           }
         }
@@ -221,6 +222,9 @@ var Package = Base.extend({
       this[name] = value;
       this.exports += "," + name;
       this.namespace += format("var %1=%2.%1;", name, this.name);
+      if (value && value.ancestorOf == Base.ancestorOf && name != "constructor") { // it's a class
+        value.toString = K("[" + String2.slice(this, 1, -1) + "." + name + "]");
+      }
     }
   },
 
@@ -236,6 +240,8 @@ var Package = Base.extend({
 // =========================================================================
 // base2/Abstract.js
 // =========================================================================
+
+// Not very exciting this.
 
 var Abstract = Base.extend({
   constructor: function() {
@@ -290,7 +296,7 @@ var Module = Abstract.extend(null, {
       if (_ancestorOf(Module, _interface)) {
         // Implement static methods.
         for (var name in _interface) {
-          if (module[name] === undefined) {
+          if (typeof module[name] == "undefined") {
             var property = _interface[name];
             if (typeof property == "function" && property.call && _interface.prototype[name]) {
               property = _createStaticModuleMethod(_interface, name);
@@ -392,7 +398,7 @@ var Enumerable = Module.extend({
   invoke: function(object, method) {
     // Apply a method to each item in the enumerated object.
     var args = _slice.call(arguments, 2);
-    return this.map(object, (typeof method == "function") ? function(item) {
+    return this.map(object, typeof method == "function" ? function(item) {
       return item == null ? undefined : method.apply(item, args);
     } : function(item) {
       return item == null ? undefined : item[method].apply(item, args);
@@ -480,15 +486,15 @@ var Map = Base.extend({
 
   // Ancient browsers throw an error if we use "in" as an operator.
   has: function(key) {
-  /*@cc_on @*/
-  /*@if (@_jscript_version < 5.5)
-    return $Legacy.has(this, _HASH + key);
-  @else @*/
-    return _HASH + key in this;
-  /*@end @*/
+    key = _HASH + key;
+    /*@if (@_jscript_version < 5.5)
+      return this[key] !== undefined || $Legacy.has(this, key);
+    @else @*/
+      return key in this;
+    /*@end @*/
   },
 
-  merge: function(values) {
+  merge: function(values /*, value1, value2, .. ,valueN */) {
     var put = flip(this.put);
     forEach (arguments, function(values) {
       forEach (values, put, this);
@@ -556,7 +562,7 @@ var Collection = Map.extend({
     // Duplicates not allowed using add().
     // But you can still overwrite entries using put().
     if (this.has(key)) throw "Duplicate key '" + key + "'.";
-    this.put.apply(this, arguments);
+    return this.put.apply(this, arguments);
   },
 
   clear: function() {
@@ -571,7 +577,7 @@ var Collection = Map.extend({
   },
 
   forEach: function(block, context) {
-    var keys = this[_KEYS];
+    var keys = this[_KEYS].concat();
     var length = keys.length;
     for (var i = 0; i < length; i++) {
       block.call(context, this[_HASH + keys[i]], keys[i], this);
@@ -596,7 +602,7 @@ var Collection = Map.extend({
     if (this.has(key)) throw "Duplicate key '" + key + "'.";
     this[_KEYS].insertAt(index, String(key));
     this[_HASH + key] = null; // placeholder
-    this.put.apply(this, _slice.call(arguments, 1));
+    return this.put.apply(this, _slice.call(arguments, 1));
   },
 
   item: function(keyOrIndex) {
@@ -618,7 +624,7 @@ var Collection = Map.extend({
   putAt: function(index, item) {
     arguments[0] = this[_KEYS].item(index);
     if (arguments[0] == null) throw "Index out of bounds.";
-    this.put.apply(this, arguments);
+    return this.put.apply(this, arguments);
   },
 
   remove: function(key) {
@@ -774,7 +780,7 @@ var RegGrp = Collection.extend({
   
   init: function() {
     forEach ("add,get,has,put,remove".split(","), function(name) {
-      _override(this, name, function(expression) {
+      this[name] = _override(this, name, function(expression) {
         if (instanceOf(expression, RegExp)) {
           arguments[0] = expression.source;
         }
@@ -814,7 +820,8 @@ var RegGrp = Collection.extend({
       this.replacement = replacement;
       this.toString = K(expression + "");
     },
-    
+
+    disabled: false,
     length: 0,
     replacement: ""
   },
@@ -834,7 +841,7 @@ var lang = {
   name:      "lang",
   version:   base2.version,
   exports:   "assert,assertArity,assertType,bind,copy,extend,forEach,format,instanceOf,match,pcopy,rescape,trim,typeOf",
-  namespace: "" // fixed later
+  namespace: "" // Fixed later.
 };
 
 // =========================================================================
@@ -848,7 +855,7 @@ function assert(condition, message, ErrorClass) {
 };
 
 function assertArity(args, arity, message) {
-  if (arity == null) arity = args.callee.length;
+  if (arity == null) arity = args.callee.length; //-@DRE
   if (args.length < arity) {
     throw new SyntaxError(message || "Not enough arguments.");
   }
@@ -864,8 +871,7 @@ function assertType(object, type, message) {
 // lang/copy.js
 // =========================================================================
 
-function copy(object) {
-  // a quick copy
+function copy(object) { // A quick copy.
   var copy = {};
   for (var i in object) {
     copy[i] = object[i];
@@ -873,7 +879,7 @@ function copy(object) {
   return copy;
 };
 
-function pcopy(object) {
+function pcopy(object) { // Prototype-base copy.
   // Doug Crockford / Richard Cornford
   _dummy.prototype = object;
   return new _dummy;
@@ -903,7 +909,7 @@ function extend(object, source) { // or extend(object, key, value)
         var value = source[key];
         if (value != proto[key]) {
           if (_BASE.test(value)) {
-            _override(object, key, value)
+            object[key] = _override(object, key, value);
           } else {
             object[key] = value;
           }
@@ -912,7 +918,7 @@ function extend(object, source) { // or extend(object, key, value)
     }
     // Copy each of the source object's properties to the target object.
     for (key in source) {
-      if (proto[key] === undefined) {
+      if (typeof proto[key] == "undefined") {
         value = source[key];
         // Object detection.
         if (key.indexOf("@") == 0) {
@@ -923,7 +929,7 @@ function extend(object, source) { // or extend(object, key, value)
           if (ancestor && typeof value == "function") {
             if (value != ancestor) {
               if (_BASE.test(value)) {
-                _override(object, key, value);
+                object[key] = _override(object, key, value);
               } else {
                 value.ancestor = ancestor;
                 object[key] = value;
@@ -936,7 +942,17 @@ function extend(object, source) { // or extend(object, key, value)
       }
     }
   }
-  return object;
+  // http://www.hedgerwow.com/360/dhtml/ie6_memory_leak_fix/
+  /*@if (@_jscript) {
+    try {
+      return object;
+    } finally {
+      object = null;
+    }
+  }
+  @else @*/
+    return object;
+  /*@end @*/
 };
 
 function _ancestorOf(ancestor, fn) {
@@ -950,7 +966,7 @@ function _ancestorOf(ancestor, fn) {
 };
 
 function _override(object, name, method) {
-  // Override an existing method.
+  // Return a method that overrides an existing method.
   var ancestor = object[name];
   var superObject = base2.__prototyping; // late binding for prototypes
   if (superObject && ancestor != superObject[name]) superObject = null;
@@ -963,10 +979,9 @@ function _override(object, name, method) {
   };
   _base.method = method;
   _base.ancestor = ancestor;
-  object[name] = _base;
   // introspection (removed when packed)
   ;;; _base.toString = K(method + "");
-  object = null;
+  return _base;
 };
 
 // =========================================================================
@@ -985,7 +1000,7 @@ function forEach(object, block, context, fn) {
     if (typeof object == "function" && object.call) {
       // Functions are a special case.
       fn = Function;
-    } else if (typeof object.forEach == "function" && object.forEach != arguments.callee) {
+    } else if (typeof object.forEach == "function" && object.forEach != forEach) {
       // The object implements a custom forEach method.
       object.forEach(block, context);
       return;
@@ -1003,11 +1018,12 @@ forEach.csv = function(string, block, context) {
 };
 
 forEach.detect = function(object, block, context) {
-  forEach (object, function(value, key) {
+  var filter = function(value, key) {
     if (key.indexOf("@") == 0) { // object detection
-      if (detect(key.slice(1))) forEach (value, arguments.callee);
+      if (detect(key.slice(1))) forEach (value, filter);
     } else block.call(context, value, key, object);
-  });
+  };
+  forEach (object, filter);
 };
 
 // These are the two core enumeration methods. All other forEach methods
@@ -1022,9 +1038,8 @@ function _Array_forEach(array, block, context) {
     }
   } else { // Cater for sparse arrays.
     for (i = 0; i < length; i++) {
-    /*@cc_on @*/
     /*@if (@_jscript_version < 5.2)
-      if ($Legacy.has(array, i))
+      if (array[i] !== undefined && $Legacy.has(array, i))
     @else @*/
       if (i in array)
     /*@end @*/
@@ -1035,15 +1050,15 @@ function _Array_forEach(array, block, context) {
 
 function _Function_forEach(fn, object, block, context) {
   // http://code.google.com/p/base2/issues/detail?id=10
-  
+
   // Run the test for Safari's buggy enumeration.
   var Temp = function(){this.i=1};
   Temp.prototype = {i:1};
   var count = 0;
   for (var i in new Temp) count++;
-  
+
   // Overwrite the main function the first time it is called.
-  _Function_forEach = (count > 1) ? function(fn, object, block, context) {
+  _Function_forEach = count > 1 ? function(fn, object, block, context) {
     // Safari fix (pre version 3)
     var processed = {};
     for (var key in object) {
@@ -1055,12 +1070,12 @@ function _Function_forEach(fn, object, block, context) {
   } : function(fn, object, block, context) {
     // Enumerate an object and compare its keys with fn's prototype.
     for (var key in object) {
-      if (fn.prototype[key] === undefined) {
+      if (typeof fn.prototype[key] == "undefined") {
         block.call(context, object[key], key, object);
       }
     }
   };
-  
+
   _Function_forEach(fn, object, block, context);
 };
 
@@ -1077,13 +1092,13 @@ function instanceOf(object, klass) {
   }
 
   if (object == null) return false;
-  
-  /*@cc_on  
+   
   // COM objects don't have a constructor
-  if (typeof object.constructor != "function") {
-    return klass == Object;
-  }
-  @*/
+  /*@if (@_jscript)
+    if (typeof object.constructor != "function") {
+      return klass == Object;
+    }
+  /*@end @*/
   if (object.constructor == klass) return true;
   if (klass.ancestorOf) return klass.ancestorOf(object.constructor);
   /*@if (@_jscript_version < 5.1)
@@ -1147,11 +1162,11 @@ function typeOf(object) {
 };
 
 // =========================================================================
-// JavaScript/package.js
+// js/package.js
 // =========================================================================
 
-var JavaScript = {
-  name:      "JavaScript",
+var js = {
+  name:      "js",
   version:   base2.version,
   exports:   "Array2,Date2,Function2,String2",
   namespace: "", // fixed later
@@ -1190,8 +1205,9 @@ function _createObject2(Native, constructor, generics, extensions) {
 
   // Remove methods that are already implemented.
   for (var name in INative) {
-    if (name != "prototype" && name != "toString" && Native[name]) {
-      INative[name] = Native[name];
+    var method = Native[name];
+    if (method && name != "prototype" && name != "toString" && method != Function.prototype[name]) {
+      INative[name] = method;
       delete INative.prototype[name];
     }
     Native2[name] = INative[name];
@@ -1206,7 +1222,7 @@ function _createObject2(Native, constructor, generics, extensions) {
 };
 
 // =========================================================================
-// JavaScript/~/Date.js
+// js/~/Date.js
 // =========================================================================
 
 // Fix Date.get/setYear() (IE5-7)
@@ -1238,19 +1254,17 @@ if (_testDate.getUTCHours() != 0) {
 }
 
 // =========================================================================
-// JavaScript/~/Function.js
+// js/~/Function.js
 // =========================================================================
 
 // Some browsers don't define this.
-
 Function.prototype.prototype = {};
 
 // =========================================================================
-// JavaScript/~/String.js
+// js/~/String.js
 // =========================================================================
 
 // A KHTML bug.
-
 if ("".replace(/^/, K("$$")) == "$") {
   extend(String.prototype, "replace", function(expression, replacement) {
     if (typeof replacement == "function") {
@@ -1264,7 +1278,7 @@ if ("".replace(/^/, K("$$")) == "$") {
 }
 
 // =========================================================================
-// JavaScript/Array2.js
+// js/Array2.js
 // =========================================================================
 
 var Array2 = _createObject2(
@@ -1273,19 +1287,21 @@ var Array2 = _createObject2(
   "concat,join,pop,push,reverse,shift,slice,sort,splice,unshift", // generics
   Enumerable, {
     batch: function(array, block, timeout, oncomplete, context) {
-      var index = 0, length = array.length;
-      setTimeout(function() {
+      var index = 0,
+          length = array.length;
+      var batch = function() {
         var now = Date2.now(), start = now, k = 0;
         while (index < length && (now - start < timeout)) {
           block.call(context, array[index], index++, array);
           if (k++ < 5 || k % 50 == 0) now = Date2.now();
         }
         if (index < length) {
-          setTimeout(arguments.callee, 10);
+          setTimeout(batch, 10);
         } else {
           if (oncomplete) oncomplete.call(context);
         }
-      }, 1);
+      };
+      setTimeout(batch, 1);
     },
 
     combine: function(keys, values) {
@@ -1309,14 +1325,15 @@ var Array2 = _createObject2(
 
     flatten: function(array) {
       var i = 0;
-      return Array2.reduce(array, function(result, item) {
+      var flatten = function(result, item) {
         if (Array2.like(item)) {
-          Array2.reduce(item, arguments.callee, result);
+          Array2.reduce(item, flatten, result);
         } else {
           result[i++] = item;
         }
         return result;
-      }, []);
+      };
+      return Array2.reduce(array, flatten, []);
     },
     
     forEach: _Array_forEach,
@@ -1397,7 +1414,7 @@ Array2.like = function(object) {
 ;;; Enumerable["#implemented_by"].push(Array2);
 
 // =========================================================================
-// JavaScript/Date2.js
+// js/Date2.js
 // =========================================================================
 
 // http://developer.mozilla.org/es4/proposals/date_and_time.html
@@ -1429,7 +1446,7 @@ var Date2 = _createObject2(
   function(yy, mm, dd, h, m, s, ms) {
     switch (arguments.length) {
       case 0: return new Date;
-      case 1: return typeof yy == "number" ? new Date(yy) : new Date(Date2.parse(yy));
+      case 1: return typeof yy == "string" ? new Date(Date2.parse(yy)) : new Date(yy.valueOf());
       default: return new Date(yy, mm, arguments.length == 2 ? 1 : dd, h || 0, m || 0, s || 0, ms || 0);
     }
   }, "", {
@@ -1462,18 +1479,20 @@ Date2.parse = function(string, defaultDate) {
   // parse ISO date
   var parts = match(string, _DATE_PATTERN);
   if (parts.length) {
-    if (parts[_DATE_PARTS.Month]) parts[_DATE_PARTS.Month]--; // js months start at zero
+    var month = parts[_DATE_PARTS.Month];
+    if (month) parts[_DATE_PARTS.Month] = String(month - 1); // js months start at zero
     // round milliseconds on 3 digits
     if (parts[_TIMEZONE_PARTS.Hectomicroseconds] >= 5) parts[_DATE_PARTS.Milliseconds]++;
+    var utc = parts[_TIMEZONE_PARTS.UTC] || parts[_TIMEZONE_PARTS.Hours] ? "UTC" : "";
     var date = new Date(defaultDate || 0);
-    var prefix = parts[_TIMEZONE_PARTS.UTC] || parts[_TIMEZONE_PARTS.Hours] ? "UTC" : "";
+    if (parts[_DATE_PARTS.Date]) date["set" + utc + "Date"](14);
     for (var part in _DATE_PARTS) {
       var value = parts[_DATE_PARTS[part]];
       if (value) {
         // set a date part
-        date["set" + prefix + part](value);
+        date["set" + utc + part](value);
         // make sure that this setting does not overflow
-        if (date["get" + prefix + part]() != parts[_DATE_PARTS[part]]) {
+        if (date["get" + utc + part]() != parts[_DATE_PARTS[part]]) {
           return NaN;
         }
       }
@@ -1492,7 +1511,7 @@ Date2.parse = function(string, defaultDate) {
 };
 
 // =========================================================================
-// JavaScript/String2.js
+// js/String2.js
 // =========================================================================
 
 var String2 = _createObject2(
@@ -1533,8 +1552,8 @@ function format(string) {
 };
 
 function match(string, expression) {
-  // Same as String.match() except that this function will return an empty
-  // array if there is no match.
+  // Same as String.match() except that this function will return an
+  // empty array if there is no match.
   return (string + "").match(expression) || [];
 };
 
@@ -1544,7 +1563,7 @@ function rescape(string) {
 };
 
 // =========================================================================
-// JavaScript/Function2.js
+// js/Function2.js
 // =========================================================================
 
 var Function2 = _createObject2(
@@ -1564,11 +1583,11 @@ var Function2 = _createObject2(
   }
 );
 
-function I(i) { // return first argument
+function I(i) { // Return first argument.
   return i;
 };
 
-function II(i, ii) { // return second argument
+function II(i, ii) { // Return second argument.
   return ii;
 };
 
@@ -1585,7 +1604,7 @@ function bind(fn, context) {
     return function() {
       return (lateBound ? context[fn] : fn).apply(context, args.concat.apply(args, arguments));
     };
-  } else { // faster if there are no additional arguments
+  } else { // Faster if there are no additional arguments.
     return function() {
       return (lateBound ? context[fn] : fn).apply(context, arguments);
     };
@@ -1621,9 +1640,8 @@ function not(fn) {
   };
 };
 
-function partial(fn) {
+function partial(fn) { // Based on Oliver Steele's version.
   var args = _slice.call(arguments, 1);
-  // based on Oliver Steele's version
   return function() {
     var specialised = args.concat(), i = 0, j = 0;
     while (i < args.length && j < arguments.length) {
@@ -1660,23 +1678,32 @@ function detect() {
   //    e.g. detect("MSIE");
   //    e.g. detect("MSIE|Opera");
 
-  var jscript = NaN/*@cc_on||@_jscript_version@*/; // http://dean.edwards.name/weblog/2007/03/sniff/#comment85164
-  var javaEnabled = global.java ? true : false;
+  var jscript = NaN/*@cc_on||@_jscript_version@*/, // http://dean.edwards.name/weblog/2007/03/sniff/#comment85164
+      javaEnabled = true;
   if (global.navigator) { // browser
-    var MSIE = /MSIE[\d.]+/g;
-    var element = document.createElement("span"),
-        style = element.style;
-    element.expando = 1;
-    // Close up the space between name and version number.
-    //  e.g. MSIE 6 -> MSIE6
-    var userAgent = navigator.userAgent.replace(/([a-z])[\s\/](\d)/gi, "$1$2");
+    var MSIE    = /MSIE[\d.]+/g,
+        element = document.createElement("span"),
+        input   = document.createElement("input"),
+        style   = element.style,
+        // Close up the space between name and version number.
+        //  e.g. MSIE 6 -> MSIE6
+        userAgent = navigator.userAgent.replace(/([a-z])[\s\/](\d)/gi, "$1$2");
+    javaEnabled &= navigator.javaEnabled();
     // Fix Opera's (and others) user agent string.
     if (!jscript) userAgent = userAgent.replace(MSIE, "");
-    if (MSIE.test(userAgent)) userAgent = userAgent.match(MSIE)[0] + " " + userAgent.replace(MSIE, "");
-    if (/Gecko/.test(userAgent)) userAgent = userAgent.replace(/rv:/, "Gecko");
-    if (!/Compat$/.test(document.compatMode)) userAgent += ";QuirksMode";
-    base2.userAgent = navigator.platform + " " + userAgent.replace(/like \w+/gi, "");
-    javaEnabled &= navigator.javaEnabled();
+    if (/MSIE/.test(userAgent)) {
+      userAgent = userAgent.match(MSIE)[0] + ";" + userAgent
+        .replace(MSIE, "")
+        .replace(/user\-agent.*$/i, ""); // crap gets appended here
+    }
+    ;;; userAgent = userAgent.replace(/\.NET CLR[\d\.]*/g, "");
+    // Chrome is different enough that it counts as a different vendor.
+    // Sniff for Webkit unless you specifically want either Chrome or Safari.
+    // Arora is treated as Safari.
+    if (/Chrome/.test(userAgent)) userAgent = userAgent.replace(/Safari[\d.]*/gi, "");
+    else if (/Gecko/.test(userAgent)) userAgent = userAgent.replace(/Gecko/g, "Gecko/").replace(/rv:/, "Gecko");
+    if (!/^CSS/.test(document.compatMode)) userAgent += ";QuirksMode";
+    base2.userAgent = userAgent.replace(/like \w+/gi, "") + ";" + navigator.platform;
 //} else if (java) { // rhino
 //  var System = java.lang.System;
 //  base2.userAgent = "Rhino " + System.getProperty("os.arch") + " " + System.getProperty("os.name") + " " + System.getProperty("os.version");
@@ -1686,24 +1713,47 @@ function detect() {
 
   var _cache = {};
   detect = function(expression) {
+    var not = expression.indexOf("!") == 0;
+    if (not) expression = expression.slice(1);
     if (_cache[expression] == null) {
-      var returnValue = false, test = expression;
-      var not = test.indexOf("!") == 0;
-      if (not) test = test.slice(1);
-      if (test.indexOf("(") == 0) {
+      var returnValue = false,
+          test = expression;
+      if (test.indexOf("(") == 0) { // Feature detection
+        if (base2.dom) {
+          test = test
+            .replace(/(hasFeature)/, "document.implementation.$1")
+            .replace(/\bstyle\.(\w+)/g, function(match, propertyName) {
+              if (!style[propertyName]) {
+                propertyName = base2.dom.CSSStyleDeclaration.getPropertyName(propertyName);
+              }
+              return "style." + propertyName;
+            })
+            .replace(/^\((\w+\.[\w\.]+)\)$/, function(match, feature) {
+              feature = feature.split(".");
+              var propertyName = feature.pop(), object = feature.join(".");
+              return "(" +
+                (jscript < 5.6 ?
+                  object + "." + propertyName + "!==undefined" :
+                  "'" + propertyName + "' in " + object) +
+              ")";
+            });
+        }
         try {
-          returnValue = new Function("element,style,jscript,java,global", "return !!" + test)(element, style, jscript, javaEnabled, global);
-        } catch (ex) {
+          returnValue = new Function("global,element,input,style,jscript,java", "return !!" + test)(global, element, input, style, jscript, javaEnabled ? global.java : null);
+        } catch (x) {
           // the test failed
         }
       } else {
         // Browser sniffing.
         returnValue = new RegExp("(" + test + ")", "i").test(base2.userAgent);
       }
-      _cache[expression] = !!(not ^ returnValue);
+      _cache[expression] = returnValue;
     }
-    return _cache[expression];
+    return !!(not ^ _cache[expression]);
   };
+  
+  detect.MSIE = !!jscript;
+  detect.MSIE5 = jscript < 5.6;
   
   return detect(arguments[0]);
 };
@@ -1713,14 +1763,20 @@ function detect() {
 // =========================================================================
 
 base2 = global.base2 = new Package(this, base2);
+base2.toString = K("[base2]"); // hide private data here
+
 var exports = this.exports;
 
 lang = new Package(this, lang);
 exports += this.exports;
 
-JavaScript = new Package(this, JavaScript);
+js = new Package(this, js);
 eval(exports + this.exports);
 
 lang.extend = extend;
+
+// legacy support
+base2.JavaScript = pcopy(js);
+base2.JavaScript.namespace += "var JavaScript=js;";
 
 }; ////////////////////  END: CLOSURE  /////////////////////////////////////

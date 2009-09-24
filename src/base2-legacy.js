@@ -2,13 +2,13 @@
 // This file is required if you wish to support any of the following browsers:
 //  * IE5.0 (Windows)
 //  * IE5.x (Mac)
-//  * Netscape 6
+//  * Mozilla < 1.7 (FF < 1.0)
 //  * Safari 1.x
 
 window.undefined = void(0);
 
 new function() {
-  var slice = Array.prototype.slice, html = document.documentElement;
+  var slice = Array.prototype.slice;
 
   window.$Legacy = {
     has: function(object, key) {
@@ -200,11 +200,12 @@ new function() {
   
   // mozilla fixes
   if (window.Components) {
+    var element = document.createElement("span");
     // for older versions of gecko we need to use getPropertyValue() to
     // access css properties returned by getComputedStyle().
     // we don't want this so we fix it.
     try {
-      var computedStyle = getComputedStyle(html, null);
+      var computedStyle = getComputedStyle(element, null);
       // the next line will throw an error for some versions of mozilla
       var pass = computedStyle.display;
     } catch (ex) {
@@ -218,13 +219,32 @@ new function() {
       			return this.getPropertyValue(cssName);
       		});
       	};
-      	for (var propertyName in html.style) {
-      		if (typeof html.style[propertyName] == "string") {
+      	for (var propertyName in element.style) {
+      		if (typeof element.style[propertyName] == "string") {
       			assignStyleGetter(propertyName);
       		}
       	}
       }
     }
+    /*@if (!@_jscript) @*/
+    if (!("textContent" in element)) {
+      HTMLElement.prototype.__defineGetter__("textContent", function() {
+        var text = "", childNode = this.firstChild;
+        while (childNode) {
+          if (childNode.nodeType == 1) text += childNode.textContent;
+          else if (childNode.nodeType == 3) text += childNode.nodeValue;
+          childNode = childNode.nextSibling;
+        }
+        return text;
+      });
+      HTMLElement.prototype.__defineSetter__("textContent", function(text) {
+        text += "";
+        with (this) while (lastChild) removeChild(lastChild);
+        this.appendChild(document.createTextNode(text));
+        return text;
+      });
+    }
+    /*@end @*/
 
     if (parseInt(navigator.productSub) < 20040614) {
       HTMLInputElement.prototype.__defineGetter__("clientWidth", function() {

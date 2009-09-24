@@ -7,7 +7,7 @@
     Doeke Zanstra
 */
 
-// timestamp: Mon, 30 Mar 2009 18:26:18
+// timestamp: Wed, 23 Sep 2009 19:38:56
 
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
@@ -59,11 +59,16 @@ JSON.toString = function(object) {
   return module.toJSONString(object);
 };
 
+function pad(number, length) {
+  return "0000".slice(0, (length || 2) - String(number).length) + number;
+};
+
 // =========================================================================
 // JSON/Object.js
 // =========================================================================
 
 JSON.Object = Module.extend({
+
   toJSONString: function(object) {
     return object == null ? "null" : "{" + reduce(object, function(properties, property, name) {
       if (JSON.Object.isValid(property)) {
@@ -72,6 +77,7 @@ JSON.Object = Module.extend({
       return properties;
     }, []).join(",") + "}";
   }
+  
 }, {
   VALID_TYPE: /^(object|boolean|number|string)$/,
   
@@ -86,12 +92,9 @@ JSON.Object = Module.extend({
 
 JSON.Array = JSON.Object.extend({
   toJSONString: function(array) {
-    return "[" + reduce(array, function(items, item) {
-      if (JSON.Object.isValid(item)) {
-        items.push(JSON.toString(item));
-      }
-      return items;
-    }, []).join(",") + "]";
+    var i = array.length, strings = [];
+    while (i--) strings[i] = JSON.Object.isValid(array[i]) ? JSON.toString(array[i]) : "null";
+    return "[" + strings.join(",") + "]";
   }
 });
 
@@ -100,9 +103,11 @@ JSON.Array = JSON.Object.extend({
 // =========================================================================
 
 JSON.Boolean = JSON.Object.extend({
+
   toJSONString: function(bool) {
     return String(bool);
   }
+  
 });
 
 // =========================================================================
@@ -111,15 +116,7 @@ JSON.Boolean = JSON.Object.extend({
 
 JSON.Date = JSON.Object.extend({
   toJSONString: function(date) {
-    var pad = function(n) {
-      return n < 10 ? "0" + n : n;
-    };
-    return '"' + date.getUTCFullYear() + "-" +
-      pad(date.getUTCMonth() + 1) + "-" +
-      pad(date.getUTCDate()) + "T" +
-      pad(date.getUTCHours()) + ":" +
-      pad(date.getUTCMinutes()) + ":" +
-      pad(date.getUTCSeconds()) + 'Z"';
+    return '"' + Date2.toISOString(date) + '"';
   }
 });
 
@@ -128,9 +125,11 @@ JSON.Date = JSON.Object.extend({
 // =========================================================================
 
 JSON.Number = JSON.Object.extend({
+
   toJSONString: function(number) {
     return isFinite(number) ? String(number) : "null";
   }
+  
 });
 
 // =========================================================================
@@ -143,7 +142,7 @@ JSON.String = JSON.Object.extend({
       if (JSON.VALID.test(string)) {
         return new Function("return " + string)();
       }
-    } catch (error) {
+    } catch (x) {
       throw new SyntaxError("parseJSON");
     }
     return "";
@@ -154,20 +153,18 @@ JSON.String = JSON.Object.extend({
   }
 }, {
   ESCAPE: new RegGrp({
-    '\b':   '\\b',
-    '\\t':  '\\t',
-    '\\n':  '\\n',
-    '\\f':  '\\f',
-    '\\r':  '\\r',
     '"' :   '\\"',
-    '\\\\': '\\\\',
-    '[\\x00-\\x1f]': function(chr) {
-      var charCode = chr.charCodeAt(0);
-      return '\\u00' + Math.floor(charCode / 16).toString(16) + (charCode % 16).toString(16);
-    }
+    '\\\\': '\\\\'
   })
 });
 
+JSON.String.ESCAPE.put(
+  /[\\\"\x00-\x1f\x7f-\x9f\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/,
+  function(chr) {
+    var charCode = chr.charCodeAt(0);
+    return '\\u00' + (~~(charCode / 16)).toString(16) + (charCode % 16).toString(16);
+  }
+);
 eval(this.exports);
 
 }; ////////////////////  END: CLOSURE  /////////////////////////////////////

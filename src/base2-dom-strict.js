@@ -7,7 +7,7 @@
     Doeke Zanstra
 */
 
-// timestamp: Mon, 30 Mar 2009 18:26:18
+// timestamp: Wed, 23 Sep 2009 19:38:56
 
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
@@ -17,9 +17,11 @@ new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
 // employ strict validation of DOM calls
 
-eval(base2.namespace);
-eval(DOM.namespace);
-eval(lang.namespace);
+eval(
+  base2.namespace +
+  base2.dom.namespace +
+  base2.lang.namespace
+);
 
 // =========================================================================
 // DOM/strict/DocumentEvent.js
@@ -31,6 +33,7 @@ DocumentEvent.implement({
   createEvent: function(document, type) {
     assertArity(arguments);
     assert(Traversal.isDocument(document), "Invalid object.");
+    
     return this.base(document, type);
   }
 });
@@ -46,6 +49,7 @@ EventTarget.implement({
     assertArity(arguments);
     assertEventTarget(target);
     assert(event && event.type, "Invalid event object.", TypeError);
+    
     return this.base(target, event);
   },
 
@@ -57,6 +61,7 @@ function strictEventListener(target, type, listener, capture) {
   assertEventTarget(target);
   assertType(listener.handleEvent || listener, "function", "Invalid event listener.");
   assertType(capture, "boolean", "Invalid capture argument.");
+  
   return this.base(target, type, listener, capture);
 };
 
@@ -81,6 +86,7 @@ NodeSelector.implement({
 function strictNodeSelector(node, selector) {
   assertArity(arguments);
   assert(Traversal.isDocument(node) || Traversal.isElement(node), "Invalid object.", TypeError);
+  
   return this.base(node, selector);
 };
 
