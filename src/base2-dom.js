@@ -9,6 +9,7 @@
 
 // timestamp: Wed, 23 Sep 2009 19:38:55
 
+
 new function(_no_shrink_) { ///////////////  BEGIN: CLOSURE  ///////////////
 
 // =========================================================================
@@ -29,7 +30,7 @@ var dom = new base2.Package(this, {
     "Event,EventTarget,DocumentEvent,"+                            // Events
     "HTMLDocument,HTMLElement,ClassList,"+                         // HTML
     "ElementView",                                                 // CSS Object Model
-  
+
   bind: function(node) {
     // Apply a base2 DOM Binding to a native DOM node.
     /*@if (@_jscript_version < 5.6)
@@ -64,7 +65,7 @@ var dom = new base2.Package(this, {
     }
     return node;
   },
-  
+
   isBound: function(node) {
     return !!_boundElementIDs[node.nodeType == 1 ? node.uniqueID : node.base2ID];
   }
@@ -152,7 +153,7 @@ var Interface = Module.extend(null, {
       }
     }, this, Module);
   },
-  
+
   implement: function(_interface) {
     if (typeof _interface == "object") {
       _createDelegates(this, _interface);
@@ -215,10 +216,10 @@ var Node = Binding.extend({
       } else if (Traversal.contains(other, node)) {
         return 2|8;  // preceding|contains
       }
-      
+
       var nodeIndex = _getSourceIndex(node);
       var otherIndex = _getSourceIndex(other);
-      
+
       if (nodeIndex < otherIndex) {
         return 4; // following
       } else if (nodeIndex > otherIndex) {
@@ -379,12 +380,12 @@ var Traversal = Module.extend({
     while (node && (node = node.previousSibling)) index++;
     return index;
   },
-  
+
   getOwnerDocument: function(element) {
     // return the node's containing document
     return element.ownerDocument;
   },
-  
+
   getPreviousElementSibling: function(element) {
     // return the previous element to the supplied element
     while (element && (element = element.previousSibling) && !this.isElement(element)) continue;
@@ -438,7 +439,7 @@ var Traversal = Module.extend({
     return this.isDocument(nodeOrWindow) ?
       nodeOrWindow : nodeOrWindow.nodeType ? this.getOwnerDocument(nodeOrWindow) : nodeOrWindow.document || null;
   },
-  
+
   isDocument: function(node) {
     return !!node && node.nodeType == 9;
   },
@@ -462,7 +463,7 @@ var Traversal = Module.extend({
     isDocument: function(node) {
       return !!(node && (node.nodeType == 9 || node.writeln));
     },
-    
+
     isElement: function(node) {
       return !!node && node.nodeType == 1 && node.nodeName != "!";
     }
@@ -651,7 +652,7 @@ if (detect.MSIE && !detect("element.dispatchEvent")) {
 if (e.propertyName=="base2Events"){\
 if(typeof d.listener=="function")d.listener.call(d.target,d.event);\
 else d.listener.handleEvent(d.event)}'));
-  
+
   document.getElementsByTagName("head")[0].appendChild(_fire);
 
   var EventDispatcher = Base.extend({
@@ -746,7 +747,7 @@ var EventTarget = Interface.extend({
           phase = useCapture ? _CAPTURING_PHASE : _BUBBLING_PHASE,
           typeMap = documentState.registerEvent(type, target),
           phaseMap = typeMap[phase];
-          
+
       if (!phaseMap) phaseMap = typeMap[phase] = {};
       // create a hash table of event listeners for each object/event pair
       var listeners = phaseMap[targetID];
@@ -802,7 +803,7 @@ var EventTarget = Interface.extend({
   removeEventListener: function(target, type, listener, useCapture) {
     this.base(target, _wrappedTypes[type] || type, _unwrap(type, listener), useCapture);
   },
-  
+
   "@Gecko": {
     addEventListener: function(target, type, listener, useCapture) {
       if (type == "mousewheel") {
@@ -920,7 +921,7 @@ if (detect("Gecko")) { // this needs to be here
 
 // http://www.w3.org/TR/DOM-Level-2-Events/events.html#Events-DocumentEvent
 
-var DocumentEvent = Interface.extend({  
+var DocumentEvent = Interface.extend({
   "@!(document.createEvent)": {
     createEvent: function(document, type) {
       return Event({
@@ -934,7 +935,7 @@ var DocumentEvent = Interface.extend({
       });
     }
   },
-  
+
   "@(document.createEvent)": {
     "@!(document.createEvent('Events'))": { // before Safari 3
       createEvent: function(document, type) {
@@ -967,7 +968,7 @@ var DOMContentLoadedEvent = Base.extend({
     };
     this.listen(document);
   },
-  
+
   listen: function(document) {
     // if all else fails fall back on window.onload
     EventTarget.addEventListener(Traversal.getDefaultView(document), "load", this.fire, false);
@@ -1028,7 +1029,7 @@ var ViewCSS = Interface.extend({
         // pseudoElement parameter is not supported
         var currentStyle  = element.currentStyle,
             computedStyle = _CSSStyleDeclaration_ReadOnly.bind({});
-            
+
         for (var propertyName in currentStyle) {
           if (_METRICS.test(propertyName) || _COLOR.test(propertyName)) {
             computedStyle[propertyName] = this.getComputedPropertyValue(view, element, propertyName);
@@ -1039,7 +1040,7 @@ var ViewCSS = Interface.extend({
         forEach.csv("backgroundPosition,boxSizing,clip,cssFloat,opacity", function(propertyName) {
           computedStyle[propertyName] = this.getComputedPropertyValue(view, element, propertyName);
         }, this);
-        
+
         return computedStyle;
       }
     }
@@ -1051,7 +1052,7 @@ var ViewCSS = Interface.extend({
   "@Webkit": {prefix: "Webkit"},
   "@Opera":  {prefix: "O"},
   "@MSIE":   {prefix: "Ms"},
-  
+
   getComputedPropertyValue: function(view, element, propertyName) {
     var value = CSSStyleDeclaration.getPropertyValue(this.getComputedStyle(view, element, null), propertyName);
     if (_COLOR.test(propertyName)) value = _toRGB(value);
@@ -1068,14 +1069,14 @@ var ViewCSS = Interface.extend({
           propertyName = _getPropertyName(propertyName);
           value = currentStyle[propertyName] || "";
         }
-        
+
         /*if (value == "inherit") {
           var parentNode = element.parentNode;
           if (parentNode && parentNode.currentStyle) {
             value = this.getComputedPropertyValue(view, parentNode, propertyName) || value;
           }
         }*/
-        
+
         switch (propertyName) {
           case "float":
           case "cssFloat":
@@ -1100,7 +1101,7 @@ var ViewCSS = Interface.extend({
         }
 
         if (value.indexOf(" ") > 0) return value;
-        
+
         if (_METRICS.test(propertyName)) {
           if (_PIXEL.test(value)) return value;
           if (value == "auto") return "0px";
@@ -1119,7 +1120,7 @@ var ViewCSS = Interface.extend({
             return _MSIE_getColorValue(value);
           /*@end @*/
         }
-        
+
         return value;
       }
     }
@@ -1326,7 +1327,7 @@ var _CSS_ESCAPE =           /'(\\.|[^'\\])*'|"(\\.|[^"\\])*"|\\./g,
     _CSS_UNESCAPE =         /\x01(\d+)\x01/g,
     _CSS_CONTEXT =          /^ \*?/g,
     _QUOTE =                /'/g;
-    
+
 var _SPECIFICITY_ID =    /#/g,
     _SPECIFICITY_CLASS = /[.:\[]/g,
     _SPECIFICITY_TAG =   /^\w|[\s>+~]\w/g;
@@ -1477,7 +1478,7 @@ var StaticNodeList = Base.extend({
     }
     this.length = j;
   },
-  
+
   length: 0,
 
   forEach: function(block, context) {
@@ -1486,7 +1487,7 @@ var StaticNodeList = Base.extend({
       block.call(context, this[i], i, this);
     }
   },
-  
+
   item: Array2.prototype.item,
 
   not: function(test, context) {
@@ -1549,7 +1550,7 @@ var NodeSelector = Interface.extend({
       }
       return new Selector(selector).exec(node, 1);
     },
-    
+
     querySelectorAll: function(node, selector) {
       if (!_USE_BASE2.test(selector)) {
         try {
@@ -1619,7 +1620,7 @@ var CSSParser = RegGrp.extend({
     // $6: selector part
     this.sorter.add(/([ >](\*|[\w-]+))([^: >+~]*)(:\w+-child(\([^)]+\))?)([^: >+~]*)/, "$1$3$6$4");
   },
-  
+
   cache: null,
   ignoreCase: true,
 
@@ -1637,7 +1638,7 @@ var CSSParser = RegGrp.extend({
   format: function(selector) {
     return this.normalise(this.escape(selector + ""));
   },
-  
+
   normalise: function(selector) {
     return selector
       .replace(_CSS_TRIM, "$1")
@@ -1647,7 +1648,7 @@ var CSSParser = RegGrp.extend({
       .replace(_CSS_IMPLIED_ASTERISK, "$1*$2");
     //.replace(/\\/g, "");
   },
-  
+
   parse: function(selector, simple) {
     return this.cache[selector] ||
       (this.cache[selector] = this.revert(this.exec(this.format(selector, simple))));
@@ -1677,7 +1678,7 @@ var CSSParser = RegGrp.extend({
 // XPath parser
 // converts CSS expressions to *optimised* XPath queries
 
-// This code used to be quite readable until I added code to optimise *-child selectors. 
+// This code used to be quite readable until I added code to optimise *-child selectors.
 
 var XPathParser = CSSParser.extend({
   constructor: function() {
@@ -1687,7 +1688,7 @@ var XPathParser = CSSParser.extend({
     // so we reverse the sort order. That's what this line does:
     this.sorter.putAt(1, "$1$4$3$6");
   },
-  
+
   format: function(selector) {
     return this.base(selector).replace(/,/g, "\x02");
   },
@@ -1723,7 +1724,7 @@ var XPathParser = CSSParser.extend({
     this.build = K(this.rules);
     return this.rules;
   },
-  
+
   optimised: {
     pseudoClasses: {
       "first-child": "[1]",
@@ -1751,38 +1752,38 @@ var XPathParser = CSSParser.extend({
       }
     }
   }),
-  
+
   types: {
     identifiers: function(replacement, token) {
       this[rescape(token) + "([ID]+)"] = replacement;
     },
-    
+
     combinators: function(replacement, combinator) {
       this[rescape(combinator) + "(\\*|[ID]+)"] = replacement;
     },
-    
+
     attributes: function(replacement, operator) {
       this["\\[([ID]+)" + rescape(operator) +  "([^\\]]*)\\]"] = replacement;
     },
-    
+
     pseudoClasses: function(replacement, pseudoClass) {
       this[":" + pseudoClass.replace(/\(\)$/, pseudoClass == "not()" ? "\\((([^\\s>+~]|~=)+)\\)" : "\\(([^)]+)\\)")] = replacement;
     }
   },
-  
+
   values: {
     identifiers: {
       "#": "[@id='$1'][1]", // ID selector
       ".": "[contains(concat(' ',@class,' '),' $1 ')]" // class selector
     },
-    
+
     combinators: {
       " ": "/descendant::$1", // descendant selector
       ">": "/child::$1", // child selector
       "+": "/following-sibling::*[1][self::$1]", // direct adjacent selector
       "~": "/following-sibling::$1" // indirect adjacent selector
     },
-    
+
     attributes: { // attribute selectors
       "*=": "[contains(@$1,'$2')]",
       "^=": "[starts-with(@$1,'$2')]",
@@ -1792,7 +1793,7 @@ var XPathParser = CSSParser.extend({
 //    "!=": "[not(@$1='$2')]",
       "=":  "[@$1='$2']"
     },
-    
+
     pseudoClasses: { // pseudo class selectors
 //    "link":             "[false]",
 //    "visited":          "[false]",
@@ -1808,7 +1809,7 @@ var XPathParser = CSSParser.extend({
       "root":             "[not(parent::*)]"
     }
   },
-  
+
   "@Opera(7|8|9\\.[1-4])": {
     build: function() {
       this.optimised.pseudoClasses["last-child"] = this.values.pseudoClasses["last-child"];
@@ -2088,7 +2089,7 @@ var Selector = Base.extend({
       var result = _catchSelectorError(this, node || document, count);
       return count == 1 ? result : new StaticNodeList(result);
     },
-    
+
     test: function(element) {
       this.base;
       return !!_catchSelectorError(this, element);
@@ -2111,7 +2112,7 @@ var _IS_INDEXED              = detect("(element.sourceIndex)"),
     _PARSE_ID_SELECTOR       = new RegExp("^#([\\w\u00a1-\uffff\\-\\x01]+)?(.*)$"),
     _TOKENIZER               = /[^\s>+]+(~=|n\+\d)[^\s>+]+|[^\s>+~]+|[\s>+~]/g,
     _VARIABLES               = /\b([aeEijnpstT])\b|('[^']+')/g;
-    
+
 /*@if (@_jscript_version < 5.6)
   _IS_ELEMENT += "&&e.nodeName!='!'";
 /*@end @*/
@@ -2360,7 +2361,7 @@ var _TABLE_TH_TD  = /^(TABLE|TH|TD)$/,
                     } : {
                       test: False
                     };
-                  
+
 var _offsets = new Base({
   getBodyClient: function(document) {
     var left = 0,
@@ -2370,7 +2371,7 @@ var _offsets = new Base({
         bodyStyle = ViewCSS.getComputedStyle(view, body, null),
         position = bodyStyle.position,
         isAbsolute = position != "static";
-        
+
     if (isAbsolute) {
       left += parseInt(bodyStyle.left) + parseInt(bodyStyle.marginLeft);
       top  += parseInt(bodyStyle.top) + parseInt(bodyStyle.marginTop);
@@ -2404,7 +2405,7 @@ var _offsets = new Base({
     var client = this.getBodyClient(document),
         view = document.defaultView,
         body = document.body;
-    
+
     return {
       isAbsolute: client.isAbsolute,
       left: client.left + parseInt(ViewCSS.getComputedPropertyValue(view, body, "borderLeftWidth")),
@@ -2423,7 +2424,7 @@ var _offsets = new Base({
 
   getGeckoRoot: function(document) {
     var rootStyle = document.defaultView.getComputedStyle(document.documentElement, null);
-        
+
     return {
       x: parseInt(rootStyle.marginLeft) + parseInt(rootStyle.borderLeftWidth),
       y: parseInt(rootStyle.marginTop) + parseInt(rootStyle.borderTopWidth)
@@ -2481,7 +2482,7 @@ var ElementView = Interface.extend({
             top += offsetParent.offsetTop - offsetParent.scrollTop;
 
             computedStyle = view.getComputedStyle(offsetParent, null);
-            
+
             if (_FIX_BORDER.test(offsetParent.nodeName)) {
               if (offsetParent.clientLeft === undefined) {
                 left += parseInt(computedStyle.borderLeftWidth);
@@ -2566,7 +2567,7 @@ var ElementView = Interface.extend({
             top += offset.y;
           }
         }
-        
+
         return {
           top: top,
           right: left + element.clientWidth,
@@ -2596,7 +2597,7 @@ var ElementView = Interface.extend({
           left: left
         };
       }
-      
+
       return clientRect;
     }
   },
@@ -2629,7 +2630,7 @@ var ElementView = Interface.extend({
           documentElement = document.documentElement,
           body = document.body,
           clientRect = this.getBoundingClientRect(element);
-          
+
       left = clientRect.left + Math.max(documentElement.scrollLeft, body.scrollLeft);
       top = clientRect.top + Math.max(documentElement.scrollTop, body.scrollTop);
 
@@ -2657,7 +2658,7 @@ var ElementView = Interface.extend({
         top -= bodyOffset.top;
       }
     }
-    
+
     return {
       left: left,
       top: top
@@ -2702,7 +2703,7 @@ var ElementView = Interface.extend({
   },
 
   // Manage offsetX/Y.
-  
+
   getOffsetXY: function(element, clientX, clientY) { // slightly faster if clientLeft/Top are defined
     var clientRect = this.getBoundingClientRect(element);
     return {
@@ -2877,7 +2878,7 @@ var DocumentState = Base.extend({
           }
         };
       },
-      
+
       registered: {},
 
       fireEvent: function(type, event) {
